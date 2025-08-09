@@ -1,162 +1,116 @@
-import { NextRequest, NextResponse } from "next/server"
-import { writeFile, mkdir } from "fs/promises"
-import { existsSync } from "fs"
-import path from "path"
-import { connectDB } from "@/lib/mongodb"
-import { verifyToken } from "@/lib/auth"
+import { NextRequest, NextResponse } from 'next/server'
+import { v2 as cloudinary } from 'cloudinary'
+import { connectToDatabase } from '@/lib/mongodb'
 
-// File model for database storage
-import mongoose from "mongoose"
-
-const FileSchema = new mongoose.Schema({
-  originalName: String,
-  fileName: String,
-  filePath: String,
-  fileSize: Number,
-  mimeType: String,
-  roomId: String,
-  uploadedBy: String,
-  uploadedAt: { type: Date, default: Date.now },
-  downloadCount: { type: Number, default: 0 },
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 })
 
-const FileModel = mongoose.models.File || mongoose.model("File", FileSchema)
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
-    await connectDB()
-
-    // Verify authentication
-    const userId = await verifyToken(request)
-    if (!userId) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
-    }
-
     const formData = await request.formData()
-    const file = formData.get("file") as File
-    const roomId = formData.get("roomId") as string
+    const file = formData.get('file') as File
+    const roomId = formData.get('roomId') as string
+    const userId = formData.get('userId') as string
+    const userName = formData.get('userName') as string
 
-    if (!file) {
-      return NextResponse.json({ message: "No file uploaded" }, { status: 400 })
-    }
-
-    if (!roomId) {
-      return NextResponse.json({ message: "Room ID is required" }, { status: 400 })
+    if (!file || !roomId || !userId || !userName) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      )
     }
 
     // Check file size (50MB limit)
-    const maxSize = parseInt(process.env.UPLOAD_MAX_SIZE || "52428800") // 50MB
+    const maxSize = 50 * 1024 * 1024
     if (file.size > maxSize) {
       return NextResponse.json(
-        { message: `File size exceeds ${maxSize / 1024 / 1024}MB limit` },
+        { error: 'File size exceeds 50MB limit' },
         { status: 400 }
       )
     }
 
-    // Check file type
-    const allowedTypes = process.env.UPLOAD_ALLOWED_TYPES?.split(",") || [
-      "pdf", "doc", "docx", "txt", "png", "jpg", "jpeg", "gif", "mp4", "mp3"
-    ]
-    
-    const fileExtension = file.name.split(".").pop()?.toLowerCase()
-    if (!fileExtension || !allowedTypes.includes(fileExtension)) {
-      return NextResponse.json(
-        { message: "File type not allowed" },
-        { status: 400 }
-      )
-    }
-
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = path.join(process.cwd(), "public", "uploads", roomId)
-    if (!existsSync(uploadsDir)) {
-      await mkdir(uploadsDir, { recursive: true })
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now()
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_")
-    const fileName = `${timestamp}_${sanitizedName}`
-    const filePath = path.join(uploadsDir, fileName)
-
-    // Save file to disk
+    // Convert file to buffer
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
-    await writeFile(filePath, buffer)
+
+    // Determine resource type
+    const resourceType = file.type.startsWith('video/') ? 'video' : 
+                        file.type.startsWith('image/') ? 'image' : 'raw'
+
+    // Upload to Cloudinary
+    const uploadResult = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload_stream(
+        {
+          resource_type: resourceType,
+          folder: `virtual-study-rooms/files/${roomId.toUpperCase()}`,
+          public_id: `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        },
+        (error, result) => {
+          if (error) reject(error)
+          else resolve(result)
+        }
+      ).end(buffer)
+    })
+
+    const result = uploadResult as any
+
+    // Generate thumbnail URL for images
+    let thumbnailUrl = null
+    if (file.type.startsWith('image/')) {
+      thumbnailUrl = cloudinary.url(result.public_id, {
+        width: 200,
+        height: 200,
+        crop: 'fill',
+        quality: 'auto',
+        format: 'jpg'
+      })
+    }
 
     // Save file metadata to database
-    const fileDoc = new FileModel({
+    const { db } = await connectToDatabase()
+    
+    const fileData = {
+      fileId: result.public_id,
+      roomId: roomId.toUpperCase(),
+      fileName: result.public_id,
       originalName: file.name,
-      fileName: fileName,
-      filePath: `/uploads/${roomId}/${fileName}`,
       fileSize: file.size,
-      mimeType: file.type,
-      roomId: roomId,
+      fileType: file.type,
+      fileUrl: result.secure_url,
+      thumbnail: thumbnailUrl,
       uploadedBy: userId,
+      uploadedByName: userName,
       uploadedAt: new Date(),
       downloadCount: 0,
-    })
-
-    await fileDoc.save()
-
-    // Return file information
-    return NextResponse.json({
-      success: true,
-      fileId: fileDoc._id,
-      fileName: file.name,
-      fileUrl: `/uploads/${roomId}/${fileName}`,
-      fileSize: file.size,
-      mimeType: file.type,
-    })
-
-  } catch (error) {
-    console.error("Upload error:", error)
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    )
-  }
-}
-
-export async function GET(request: NextRequest) {
-  try {
-    await connectDB()
-
-    // Verify authentication
-    const userId = await verifyToken(request)
-    if (!userId) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
+      isDeleted: false
     }
 
-    const { searchParams } = new URL(request.url)
-    const roomId = searchParams.get("roomId")
-
-    if (!roomId) {
-      return NextResponse.json({ message: "Room ID is required" }, { status: 400 })
-    }
-
-    // Get files for the room
-    const files = await FileModel.find({ roomId })
-      .sort({ uploadedAt: -1 })
-      .populate("uploadedBy", "name")
+    await db.collection('files').insertOne(fileData)
 
     return NextResponse.json({
       success: true,
-      files: files.map(file => ({
-        id: file._id,
-        name: file.originalName,
-        size: file.fileSize,
-        type: file.mimeType,
-        url: file.filePath,
-        uploadedBy: file.uploadedBy?.name || "Unknown",
-        uploadedAt: file.uploadedAt.getTime(),
-        downloadCount: file.downloadCount,
-      }))
+      file: {
+        id: result.public_id,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        url: result.secure_url,
+        thumbnail: thumbnailUrl,
+        uploadedBy: userName,
+        uploadedAt: new Date().toISOString()
+      }
     })
 
   } catch (error) {
-    console.error("Get files error:", error)
+    console.error('Upload error:', error)
     return NextResponse.json(
-      { message: "Internal server error" },
+      { error: 'Upload failed' },
       { status: 500 }
     )
   }

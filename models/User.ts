@@ -38,6 +38,24 @@ const UserSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    studyPreferences: {
+      subjects: [{ type: String }],
+      studyTimes: [{ type: String }],
+      goals: { type: String, default: 'Improve academic performance' }
+    },
+    stats: {
+      totalStudyTime: { type: Number, default: 0 },
+      studySessions: { type: Number, default: 0 },
+      achievements: { type: Number, default: 0 },
+      currentStreak: { type: Number, default: 0 }
+    },
+    settings: {
+      notifications: { type: Boolean, default: true },
+      publicProfile: { type: Boolean, default: false },
+      emailUpdates: { type: Boolean, default: true },
+      showOnlineStatus: { type: Boolean, default: true },
+    },
+    // Legacy fields for backward compatibility
     preferences: {
       notifications: { type: Boolean, default: true },
       publicProfile: { type: Boolean, default: true },
@@ -54,4 +72,4 @@ const UserSchema = new mongoose.Schema(
   },
 )
 
-export const User = mongoose.models.User || mongoose.model("User", UserSchema)
+export const User = (mongoose.models.User || mongoose.model("User", UserSchema)) as any

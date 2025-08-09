@@ -1,75 +1,61 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
-import jwt from "jsonwebtoken"
-import { connectDB } from "@/lib/mongodb"
-import { User } from "@/models/User"
-import { sendEmail, generateWelcomeEmail } from "@/lib/email"
+import { connectToDatabase } from "@/lib/mongodb"
+
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
-    await connectDB()
+    const { name, email, password } = await request.json()
 
-    const { name, email, password, grade, school } = await request.json()
+    if (!name || !email || !password) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      )
+    }
+
+    if (password.length < 6) {
+      return NextResponse.json(
+        { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      )
+    }
+
+    const { db } = await connectToDatabase()
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email })
+    const existingUser = await db.collection("users").findOne({ email })
     if (existingUser) {
-      return NextResponse.json({ message: "User already exists" }, { status: 400 })
+      return NextResponse.json(
+        { error: "User already exists" },
+        { status: 400 }
+      )
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12)
 
     // Create user
-    const user = await User.create({
+    const result = await db.collection("users").insertOne({
       name,
       email,
       password: hashedPassword,
-      grade,
-      school,
+      createdAt: new Date(),
+      studySessions: 0,
+      totalStudyTime: 0,
+      achievements: []
     })
 
-    // Create JWT token
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET || "fallback-secret", { expiresIn: "7d" })
-
-    // Send welcome email
-    try {
-      const { html, text } = generateWelcomeEmail({
-        userName: name,
-        loginLink: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard`,
-      })
-
-      await sendEmail({
-        to: email,
-        subject: `Welcome to ${process.env.NEXT_PUBLIC_APP_NAME}! 🎓`,
-        html,
-        text,
-      })
-    } catch (emailError) {
-      console.error("Failed to send welcome email:", emailError)
-      // Don't fail the signup if email fails
-    }
-
-    const response = NextResponse.json({ 
-      message: "Account created successfully! Welcome to Virtual Study Rooms!",
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-      }
-    }, { status: 201 })
-
-    // Set HTTP-only cookie
-    response.cookies.set("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    })
-
-    return response
+    return NextResponse.json(
+      { message: "User created successfully", userId: result.insertedId },
+      { status: 201 }
+    )
   } catch (error) {
     console.error("Signup error:", error)
-    return NextResponse.json({ message: "Internal server error" }, { status: 500 })
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    )
   }
 }

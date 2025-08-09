@@ -30,6 +30,14 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      // For authentication errors, show the error recovery component
+      if (this.state.error?.message?.includes('auth') || 
+          this.state.error?.message?.includes('session') ||
+          this.state.error?.message?.includes('fetch')) {
+        const { ErrorRecovery } = require('./error-recovery')
+        return <ErrorRecovery />
+      }
+
       return (
         <div className="min-h-screen flex items-center justify-center p-4">
           <Card className="max-w-md">
@@ -41,6 +49,14 @@ export class ErrorBoundary extends Component<Props, State> {
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-gray-600">We encountered an unexpected error. Please try refreshing the page.</p>
+              {process.env.NODE_ENV === 'development' && this.state.error && (
+                <details className="text-xs text-gray-500">
+                  <summary>Error Details</summary>
+                  <pre className="mt-2 p-2 bg-gray-100 rounded overflow-auto">
+                    {this.state.error.message}
+                  </pre>
+                </details>
+              )}
               <Button onClick={() => window.location.reload()} className="w-full">
                 Refresh Page
               </Button>

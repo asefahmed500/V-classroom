@@ -26,7 +26,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-white">
       <Navbar />
-
+      
       {/* Hero Section */}
       <section className="relative pt-20 lg:pt-32 pb-16 lg:pb-24 overflow-hidden">
         {/* Background Elements */}
@@ -36,7 +36,7 @@ export default function HomePage() {
           <div className="absolute top-40 right-10 w-72 h-72 bg-purple-200 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse delay-1000" />
           <div className="absolute bottom-20 left-1/2 w-72 h-72 bg-pink-200 rounded-full mix-blend-multiply filter blur-xl opacity-30 animate-pulse delay-2000" />
         </div>
-
+        
         <div className="relative container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-5xl mx-auto">
             {/* Badge */}
@@ -46,7 +46,7 @@ export default function HomePage() {
                 AI-Powered Learning Platform
               </Badge>
             </div>
-
+            
             {/* Main Heading */}
             <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold mb-6 leading-tight">
               <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
@@ -55,7 +55,7 @@ export default function HomePage() {
               <br />
               <span className="text-gray-900">Achieve Together</span>
             </h1>
-
+            
             {/* Subtitle */}
             <p className="text-lg sm:text-xl lg:text-2xl text-gray-600 mb-8 max-w-4xl mx-auto leading-relaxed">
               Transform isolated studying into engaging collaborative learning experiences with
@@ -63,7 +63,7 @@ export default function HomePage() {
               <span className="font-semibold text-purple-600"> AI assistance</span>, and
               <span className="font-semibold text-pink-600"> interactive tools</span> designed for high school students.
             </p>
-
+            
             {/* CTA Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
               <Link href="/rooms">
@@ -87,7 +87,7 @@ export default function HomePage() {
                 </Button>
               </Link>
             </div>
-
+            
             {/* Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 max-w-3xl mx-auto">
               <div className="text-center">
@@ -127,7 +127,7 @@ export default function HomePage() {
               Our comprehensive suite of tools transforms the way students collaborate and learn together
             </p>
           </div>
-
+          
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
             {/* Video Study Rooms */}
             <Card className="group border-0 shadow-lg hover:shadow-2xl transition-all duration-300 hover:-translate-y-2 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
@@ -137,8 +137,7 @@ export default function HomePage() {
                 </div>
                 <CardTitle className="text-xl font-bold text-gray-900 mb-3">HD Video Study Rooms</CardTitle>
                 <CardDescription className="text-gray-600 leading-relaxed">
-                  Crystal-clear video chat with up to 8 participants, screen sharing, and noise cancellation for focused
-                  study sessions
+                  Crystal-clear video chat with up to 8 participants, screen sharing, and noise cancellation for focused study sessions
                 </CardDescription>
                 <div className="flex items-center justify-center mt-4 space-x-2">
                   <CheckCircle className="w-4 h-4 text-green-500" />
@@ -155,8 +154,7 @@ export default function HomePage() {
                 </div>
                 <CardTitle className="text-xl font-bold text-gray-900 mb-3">Interactive Whiteboard</CardTitle>
                 <CardDescription className="text-gray-600 leading-relaxed">
-                  Real-time collaborative whiteboard with drawing tools, math equations, templates, and infinite canvas
-                  space
+                  Real-time collaborative whiteboard with drawing tools, math equations, templates, and infinite canvas space
                 </CardDescription>
                 <div className="flex items-center justify-center mt-4 space-x-2">
                   <CheckCircle className="w-4 h-4 text-green-500" />
@@ -190,8 +188,7 @@ export default function HomePage() {
                 </div>
                 <CardTitle className="text-xl font-bold text-gray-900 mb-3">AI Study Assistant</CardTitle>
                 <CardDescription className="text-gray-600 leading-relaxed">
-                  Personalized study suggestions, practice questions, concept explanations, and learning path
-                  optimization
+                  Personalized study suggestions, practice questions, concept explanations, and learning path optimization
                 </CardDescription>
                 <div className="flex items-center justify-center mt-4 space-x-2">
                   <CheckCircle className="w-4 h-4 text-green-500" />
@@ -248,12 +245,11 @@ export default function HomePage() {
             <h2 className="text-3xl lg:text-5xl font-bold text-gray-900 mb-6">
               Get Started in
               <span className="bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                {" "}
-                3 Easy Steps
+                {" "}3 Easy Steps
               </span>
             </h2>
           </div>
-
+          
           <div className="grid lg:grid-cols-3 gap-8 max-w-5xl mx-auto">
             <div className="text-center group">
               <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-300">
@@ -264,7 +260,7 @@ export default function HomePage() {
                 Set up your study room in seconds or join an existing one with a simple room code
               </p>
             </div>
-
+            
             <div className="text-center group">
               <div className="w-20 h-20 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-300">
                 <span className="text-2xl font-bold text-white">2</span>
@@ -274,7 +270,7 @@ export default function HomePage() {
                 Use video chat, whiteboard, and AI tools to study together with your peers
               </p>
             </div>
-
+            
             <div className="text-center group">
               <div className="w-20 h-20 bg-gradient-to-r from-pink-500 to-red-500 rounded-full flex items-center justify-center mx-auto mb-6 group-hover:scale-110 transition-transform duration-300">
                 <span className="text-2xl font-bold text-white">3</span>
@@ -299,12 +295,11 @@ export default function HomePage() {
             <h2 className="text-3xl lg:text-5xl font-bold text-gray-900 mb-6">
               Why Students
               <span className="bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
-                {" "}
-                Choose Us
+                {" "}Choose Us
               </span>
             </h2>
           </div>
-
+          
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
             <div className="text-center">
               <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-green-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -313,7 +308,7 @@ export default function HomePage() {
               <h3 className="font-bold text-gray-900 mb-2">100% Secure</h3>
               <p className="text-gray-600 text-sm">End-to-end encryption for all communications</p>
             </div>
-
+            
             <div className="text-center">
               <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <Smartphone className="w-8 h-8 text-white" />
@@ -321,7 +316,7 @@ export default function HomePage() {
               <h3 className="font-bold text-gray-900 mb-2">Mobile Ready</h3>
               <p className="text-gray-600 text-sm">Works perfectly on all devices and platforms</p>
             </div>
-
+            
             <div className="text-center">
               <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <Globe className="w-8 h-8 text-white" />
@@ -329,7 +324,7 @@ export default function HomePage() {
               <h3 className="font-bold text-gray-900 mb-2">Global Access</h3>
               <p className="text-gray-600 text-sm">Study with peers from around the world</p>
             </div>
-
+            
             <div className="text-center">
               <div className="w-16 h-16 bg-gradient-to-r from-pink-500 to-pink-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                 <Award className="w-8 h-8 text-white" />
@@ -345,11 +340,13 @@ export default function HomePage() {
       <section className="py-16 lg:py-24 bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 relative overflow-hidden">
         <div className="absolute inset-0 bg-black/10" />
         <div className="relative container mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl lg:text-5xl font-bold text-white mb-6">Ready to Transform Your Study Experience?</h2>
+          <h2 className="text-3xl lg:text-5xl font-bold text-white mb-6">
+            Ready to Transform Your Study Experience?
+          </h2>
           <p className="text-xl text-white/90 mb-8 max-w-3xl mx-auto">
-            Join thousands of students already studying smarter, not harder. Start your collaborative learning journey
-            today.
+            Join thousands of students already studying smarter, not harder. Start your collaborative learning journey today.
           </p>
+          
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
             <Link href="/auth/signup">
               <Button
@@ -390,86 +387,38 @@ export default function HomePage() {
                 Transforming education through collaborative learning and AI-powered tools.
               </p>
             </div>
-
+            
             <div>
               <h3 className="font-semibold mb-4">Product</h3>
               <ul className="space-y-2 text-sm text-gray-400">
-                <li>
-                  <Link href="#features" className="hover:text-white transition-colors">
-                    Features
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/rooms" className="hover:text-white transition-colors">
-                    Study Rooms
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/ai-assistant" className="hover:text-white transition-colors">
-                    AI Assistant
-                  </Link>
-                </li>
-                <li>
-                  <Link href="#pricing" className="hover:text-white transition-colors">
-                    Pricing
-                  </Link>
-                </li>
+                <li><Link href="#features" className="hover:text-white transition-colors">Features</Link></li>
+                <li><Link href="/rooms" className="hover:text-white transition-colors">Study Rooms</Link></li>
+                <li><Link href="/ai-assistant" className="hover:text-white transition-colors">AI Assistant</Link></li>
+                <li><Link href="#pricing" className="hover:text-white transition-colors">Pricing</Link></li>
               </ul>
             </div>
-
+            
             <div>
               <h3 className="font-semibold mb-4">Company</h3>
               <ul className="space-y-2 text-sm text-gray-400">
-                <li>
-                  <Link href="#about" className="hover:text-white transition-colors">
-                    About
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/blog" className="hover:text-white transition-colors">
-                    Blog
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/careers" className="hover:text-white transition-colors">
-                    Careers
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/contact" className="hover:text-white transition-colors">
-                    Contact
-                  </Link>
-                </li>
+                <li><Link href="#about" className="hover:text-white transition-colors">About</Link></li>
+                <li><Link href="/blog" className="hover:text-white transition-colors">Blog</Link></li>
+                <li><Link href="/careers" className="hover:text-white transition-colors">Careers</Link></li>
+                <li><Link href="/contact" className="hover:text-white transition-colors">Contact</Link></li>
               </ul>
             </div>
-
+            
             <div>
               <h3 className="font-semibold mb-4">Support</h3>
               <ul className="space-y-2 text-sm text-gray-400">
-                <li>
-                  <Link href="/help" className="hover:text-white transition-colors">
-                    Help Center
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/privacy" className="hover:text-white transition-colors">
-                    Privacy Policy
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/terms" className="hover:text-white transition-colors">
-                    Terms of Service
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/security" className="hover:text-white transition-colors">
-                    Security
-                  </Link>
-                </li>
+                <li><Link href="/help" className="hover:text-white transition-colors">Help Center</Link></li>
+                <li><Link href="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link></li>
+                <li><Link href="/terms" className="hover:text-white transition-colors">Terms of Service</Link></li>
+                <li><Link href="/security" className="hover:text-white transition-colors">Security</Link></li>
               </ul>
             </div>
           </div>
-
+          
           <div className="border-t border-gray-800 pt-8 text-center">
             <p className="text-gray-400 text-sm">
               &copy; 2025 Virtual Study Rooms - PANDA Hacks 2025 Project. Built with Next.js, MongoDB, and Gemini AI.

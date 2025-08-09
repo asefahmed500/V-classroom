@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { Toaster } from "@/components/toaster"
+import { Providers } from "./providers"
 
 export const metadata: Metadata = {
   title: "Virtual Study Rooms - AI-Powered Collaborative Learning",
@@ -25,21 +26,18 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <head>
-        <style>{`
-html {
-  font-family: ${GeistSans.style.fontFamily};
-  --font-sans: ${GeistSans.variable};
-  --font-mono: ${GeistMono.variable};
-}
-        `}</style>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta httpEquiv="Permissions-Policy" content="camera=*, microphone=*, display-capture=*" />
       </head>
-      <body>
-        <ErrorBoundary>
-          {children}
-          <Toaster />
-        </ErrorBoundary>
+      <body className={GeistSans.className}>
+        <Providers>
+          <ErrorBoundary>
+            {children}
+            <Toaster />
+          </ErrorBoundary>
+        </Providers>
       </body>
     </html>
   )

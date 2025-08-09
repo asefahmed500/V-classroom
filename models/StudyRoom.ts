@@ -2,8 +2,7 @@ import mongoose from "mongoose"
 
 const ParticipantSchema = new mongoose.Schema({
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "User",
+    type: mongoose.Schema.Types.Mixed, // Allow both ObjectId and string for demo users
     required: true,
   },
   joinedAt: {
@@ -45,7 +44,7 @@ const StudyRoomSchema = new mongoose.Schema(
     },
     roomType: {
       type: String,
-      enum: ["silent", "discussion", "focus"],
+      enum: ["silent", "discussion", "focus", "group"],
       default: "discussion",
     },
     maxParticipants: {
@@ -63,12 +62,10 @@ const StudyRoomSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
       uppercase: true,
-      minlength: 6,
-      maxlength: 6,
+      length: 6,
     },
     host: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      type: mongoose.Schema.Types.Mixed, // Allow both ObjectId and string for demo users
       required: true,
     },
     participants: [ParticipantSchema],
@@ -117,16 +114,20 @@ const StudyRoomSchema = new mongoose.Schema(
 
 // Generate room code before saving
 StudyRoomSchema.pre("save", function (next) {
-  if (!this.roomCode && this.isPrivate) {
-    this.roomCode = Math.random().toString(36).substring(2, 8).toUpperCase()
+  if (!this.roomCode) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    let result = ''
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    this.roomCode = result
   }
   next()
 })
 
 // Index for efficient queries
 StudyRoomSchema.index({ isActive: 1, createdAt: -1 })
-StudyRoomSchema.index({ roomCode: 1 })
 StudyRoomSchema.index({ host: 1 })
 StudyRoomSchema.index({ "participants.userId": 1 })
 
-export const StudyRoom = mongoose.models.StudyRoom || mongoose.model("StudyRoom", StudyRoomSchema)
+export const StudyRoom = (mongoose.models.StudyRoom || mongoose.model("StudyRoom", StudyRoomSchema)) as any

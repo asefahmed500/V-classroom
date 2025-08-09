@@ -37,4 +37,4 @@ const WhiteboardDataSchema = new mongoose.Schema(
   },
 )
 
-export const WhiteboardData = mongoose.models.WhiteboardData || mongoose.model("WhiteboardData", WhiteboardDataSchema)
+export const WhiteboardData = (mongoose.models.WhiteboardData || mongoose.model("WhiteboardData", WhiteboardDataSchema)) as any

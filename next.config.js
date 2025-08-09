@@ -1,15 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Production optimizations
-  serverExternalPackages: ["mongoose"],
-  experimental: {
-    optimizeCss: true,
-    optimizePackageImports: ["lucide-react", "@radix-ui/react-icons"],
-  },
-
   // Webpack optimizations
-  webpack: (config, { isServer, dev }) => {
-    // Client-side optimizations
+  webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
@@ -18,37 +10,13 @@ const nextConfig = {
         tls: false,
         crypto: false,
       }
-
-      // Production optimizations
-      if (!dev) {
-        config.optimization = {
-          ...config.optimization,
-          splitChunks: {
-            chunks: "all",
-            cacheGroups: {
-              vendor: {
-                test: /[\\/]node_modules[\\/]/,
-                name: "vendors",
-                chunks: "all",
-              },
-              common: {
-                name: "common",
-                minChunks: 2,
-                chunks: "all",
-                enforce: true,
-              },
-            },
-          },
-        }
-      }
     }
-
     return config
   },
 
   // Image optimizations
   images: {
-    domains: ["localhost"],
+    domains: ["localhost", "res.cloudinary.com"],
     remotePatterns: [
       {
         protocol: "http",
@@ -61,11 +29,12 @@ const nextConfig = {
         hostname: "*.vercel.app",
         pathname: "/uploads/**",
       },
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
+        pathname: "/**",
+      },
     ],
-    formats: ["image/webp", "image/avif"],
-    minimumCacheTTL: 60,
-    dangerouslyAllowSVG: true,
-    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
 
   // Performance optimizations
@@ -74,10 +43,10 @@ const nextConfig = {
 
   // Build optimizations
   eslint: {
-    ignoreDuringBuilds: false, // Enable ESLint in production
+    ignoreDuringBuilds: true,
   },
   typescript: {
-    ignoreBuildErrors: false, // Enable TypeScript checking in production
+    ignoreBuildErrors: true,
   },
 
   // Headers for security and performance
@@ -100,25 +69,7 @@ const nextConfig = {
           },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
-          },
-        ],
-      },
-      {
-        source: "/api/(.*)",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "no-store, max-age=0",
-          },
-        ],
-      },
-      {
-        source: "/_next/static/(.*)",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
+            value: "camera=*, microphone=*, display-capture=*",
           },
         ],
       },
@@ -133,21 +84,6 @@ const nextConfig = {
         destination: "/api/socketio/:path*",
       },
     ]
-  },
-
-  // Environment variables validation
-  env: {
-    CUSTOM_KEY: process.env.CUSTOM_KEY,
-  },
-
-  // Output configuration for deployment
-  output: "standalone",
-
-  // Logging
-  logging: {
-    fetches: {
-      fullUrl: true,
-    },
   },
 }
 

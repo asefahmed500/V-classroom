@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,18 +12,20 @@ import { Users, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 
-export default function LoginPage() {
+function LoginForm() {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   })
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
   const router = useRouter()
   const searchParams = useSearchParams()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
+    setError("")
 
     try {
       const response = await fetch("/api/auth/login", {
@@ -36,11 +38,11 @@ export default function LoginPage() {
         const redirectUrl = searchParams.get("redirect") || "/dashboard"
         router.push(redirectUrl)
       } else {
-        const error = await response.json()
-        alert(error.message || "Login failed")
+        const errorData = await response.json()
+        setError(errorData.message || "Login failed")
       }
     } catch (error) {
-      alert("Network error occurred")
+      setError("Network error occurred. Please try again.")
     } finally {
       setLoading(false)
     }
@@ -59,6 +61,11 @@ export default function LoginPage() {
           <CardDescription>Sign in to your Virtual Study Rooms account</CardDescription>
         </CardHeader>
         <CardContent>
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label htmlFor="email">Email</Label>
@@ -105,5 +112,13 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoginForm />
+    </Suspense>
   )
 }

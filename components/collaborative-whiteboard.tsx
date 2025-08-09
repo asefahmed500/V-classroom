@@ -1,366 +1,403 @@
 "use client"
 
-import type React from "react"
-
-import { useRef, useEffect, useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Pen, Eraser, Square, Circle, Type, Palette, Download, Trash2, Undo, Redo } from "lucide-react"
-import { io, type Socket } from "socket.io-client"
+import { Palette, Eraser, Square, Circle, Minus, RotateCcw, Share, Download, Upload, Users, Eye } from "lucide-react"
+import { Socket } from "socket.io-client"
 
-interface DrawingPoint {
-  x: number
-  y: number
-}
-
-interface DrawingPath {
-  id: string
-  points: DrawingPoint[]
-  color: string
-  width: number
-  tool: string
-  userId: string
-}
-
-interface CollaborativeWhiteboardProps {
+interface WhiteboardProps {
+  socket: Socket | null
   roomId: string
   userId: string
+  userName: string
 }
 
-export function CollaborativeWhiteboard({ roomId, userId }: CollaborativeWhiteboardProps) {
+export function CollaborativeWhiteboard({ socket, roomId, userId, userName }: WhiteboardProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [socket, setSocket] = useState<Socket | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
-  const [currentTool, setCurrentTool] = useState("pen")
-  const [currentColor, setCurrentColor] = useState("#000000")
-  const [currentWidth, setCurrentWidth] = useState(2)
-  const [paths, setPaths] = useState<DrawingPath[]>([])
-  const [currentPath, setCurrentPath] = useState<DrawingPoint[]>([])
-  const [history, setHistory] = useState<DrawingPath[][]>([])
-  const [historyIndex, setHistoryIndex] = useState(-1)
-
-  const colors = ["#000000", "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#FFA500"]
-
-  const tools = [
-    { id: "pen", icon: Pen, label: "Pen" },
-    { id: "eraser", icon: Eraser, label: "Eraser" },
-    { id: "rectangle", icon: Square, label: "Rectangle" },
-    { id: "circle", icon: Circle, label: "Circle" },
-    { id: "text", icon: Type, label: "Text" },
-  ]
+  const [tool, setTool] = useState<'pen' | 'eraser' | 'line' | 'rectangle' | 'circle'>('pen')
+  const [color, setColor] = useState('#ffffff')
+  const [lineWidth, setLineWidth] = useState(2)
+  const [activeUsers, setActiveUsers] = useState<string[]>([])
+  const [whiteboardData, setWhiteboardData] = useState<any[]>([])
+  const [isSharing, setIsSharing] = useState(false)
 
   useEffect(() => {
-    initializeSocket()
-    loadWhiteboardData()
+    if (!socket) return
+
+    // Join whiteboard session
+    socket.emit('join-whiteboard', { roomId, userId, userName })
+
+    socket.on('whiteboard-update', (data) => {
+      drawOnCanvas(data)
+      setWhiteboardData(prev => [...prev, data])
+    })
+
+    socket.on('whiteboard-clear', () => {
+      clearCanvas()
+      setWhiteboardData([])
+    })
+
+    socket.on('whiteboard-shared', (data) => {
+      // Load shared whiteboard data
+      clearCanvas()
+      setWhiteboardData(data.whiteboardData)
+      data.whiteboardData.forEach(drawData => drawOnCanvas(drawData))
+    })
+
+    socket.on('user-drawing', ({ userName: drawingUserName }) => {
+      setActiveUsers(prev => {
+        if (!prev.includes(drawingUserName)) {
+          return [...prev, drawingUserName]
+        }
+        return prev
+      })
+      
+      // Remove user from active list after 3 seconds
+      setTimeout(() => {
+        setActiveUsers(prev => prev.filter(name => name !== drawingUserName))
+      }, 3000)
+    })
 
     return () => {
-      if (socket) {
-        socket.disconnect()
-      }
+      socket.off('whiteboard-update')
+      socket.off('whiteboard-clear')
+      socket.off('whiteboard-shared')
+      socket.off('user-drawing')
     }
-  }, [])
+  }, [socket])
 
-  useEffect(() => {
-    redrawCanvas()
-  }, [paths])
-
-  const initializeSocket = () => {
-    const newSocket = io(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000", {
-      path: "/api/socket",
-      transports: ["websocket", "polling"],
-    })
-
-    newSocket.on("connect", () => {
-      console.log("Whiteboard socket connected")
-    })
-
-    newSocket.on("connect_error", (error) => {
-      console.error("Whiteboard socket connection error:", error)
-    })
-
-    newSocket.on("whiteboard-draw", (drawData: DrawingPath) => {
-      setPaths((prev) => [...prev, drawData])
-    })
-
-    newSocket.on("whiteboard-clear", () => {
-      setPaths([])
-    })
-
-    setSocket(newSocket)
-  }
-
-  const loadWhiteboardData = async () => {
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/whiteboard`)
-      if (response.ok) {
-        const data = await response.json()
-        if (data.paths) {
-          setPaths(data.paths)
-        }
-      }
-    } catch (error) {
-      console.error("Failed to load whiteboard data:", error)
-    }
-  }
-
-  const saveWhiteboardData = async (newPaths: DrawingPath[]) => {
-    try {
-      await fetch(`/api/rooms/${roomId}/whiteboard`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paths: newPaths }),
-      })
-    } catch (error) {
-      console.error("Failed to save whiteboard data:", error)
-    }
-  }
-
-  const redrawCanvas = () => {
+  const drawOnCanvas = (data: any) => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const ctx = canvas.getContext("2d")
+    const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    // Set canvas size
-    canvas.width = canvas.offsetWidth
-    canvas.height = canvas.offsetHeight
+    ctx.strokeStyle = data.color
+    ctx.lineWidth = data.lineWidth
+    ctx.lineCap = 'round'
 
-    // Clear canvas
-    ctx.fillStyle = "#ffffff"
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-    // Draw all paths
-    paths.forEach((path) => {
-      if (path.points.length > 1) {
-        ctx.strokeStyle = path.color
-        ctx.lineWidth = path.width
-        ctx.lineCap = "round"
-        ctx.lineJoin = "round"
-
-        if (path.tool === "eraser") {
-          ctx.globalCompositeOperation = "destination-out"
-        } else {
-          ctx.globalCompositeOperation = "source-over"
-        }
-
-        ctx.beginPath()
-        ctx.moveTo(path.points[0].x, path.points[0].y)
-
-        for (let i = 1; i < path.points.length; i++) {
-          ctx.lineTo(path.points[i].x, path.points[i].y)
-        }
-
-        ctx.stroke()
-      }
-    })
-
-    ctx.globalCompositeOperation = "source-over"
+    if (data.type === 'draw') {
+      ctx.beginPath()
+      ctx.moveTo(data.prevX, data.prevY)
+      ctx.lineTo(data.x, data.y)
+      ctx.stroke()
+    } else if (data.type === 'erase') {
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.beginPath()
+      ctx.arc(data.x, data.y, data.lineWidth, 0, 2 * Math.PI)
+      ctx.fill()
+      ctx.globalCompositeOperation = 'source-over'
+    }
   }
 
-  const getMousePos = (e: React.MouseEvent<HTMLCanvasElement>) => {
+  const startDrawing = (e: React.MouseEvent) => {
+    setIsDrawing(true)
     const canvas = canvasRef.current
-    if (!canvas) return { x: 0, y: 0 }
+    if (!canvas) return
 
     const rect = canvas.getBoundingClientRect()
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+
+    if (socket) {
+      socket.emit('user-drawing', { roomId, userId, userName })
     }
   }
 
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (currentTool !== "pen" && currentTool !== "eraser") return
+  const draw = (e: React.MouseEvent) => {
+    if (!isDrawing) return
 
-    setIsDrawing(true)
-    const pos = getMousePos(e)
-    setCurrentPath([pos])
-  }
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || (currentTool !== "pen" && currentTool !== "eraser")) return
-
-    const pos = getMousePos(e)
-    setCurrentPath((prev) => [...prev, pos])
-
-    // Draw current stroke locally
     const canvas = canvasRef.current
-    const ctx = canvas?.getContext("2d")
-    if (!ctx || currentPath.length === 0) return
+    if (!canvas) return
 
-    ctx.strokeStyle = currentColor
-    ctx.lineWidth = currentWidth
-    ctx.lineCap = "round"
-    ctx.lineJoin = "round"
+    const rect = canvas.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
 
-    if (currentTool === "eraser") {
-      ctx.globalCompositeOperation = "destination-out"
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    if (tool === 'eraser') {
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.beginPath()
+      ctx.arc(x, y, lineWidth, 0, 2 * Math.PI)
+      ctx.fill()
+      ctx.globalCompositeOperation = 'source-over'
+      
+      if (socket) {
+        socket.emit('whiteboard-update', {
+          roomId,
+          type: 'erase',
+          x,
+          y,
+          lineWidth,
+          userId,
+          userName
+        })
+      }
     } else {
-      ctx.globalCompositeOperation = "source-over"
+      ctx.strokeStyle = color
+      ctx.lineWidth = lineWidth
+      ctx.lineCap = 'round'
+
+      ctx.beginPath()
+      ctx.moveTo(x - 1, y - 1)
+      ctx.lineTo(x, y)
+      ctx.stroke()
+
+      if (socket) {
+        socket.emit('whiteboard-update', {
+          roomId,
+          type: 'draw',
+          x,
+          y,
+          prevX: x - 1,
+          prevY: y - 1,
+          color,
+          lineWidth,
+          tool,
+          userId,
+          userName
+        })
+      }
     }
-
-    ctx.beginPath()
-    const lastPoint = currentPath[currentPath.length - 1]
-    ctx.moveTo(lastPoint.x, lastPoint.y)
-    ctx.lineTo(pos.x, pos.y)
-    ctx.stroke()
-
-    ctx.globalCompositeOperation = "source-over"
   }
 
   const stopDrawing = () => {
-    if (!isDrawing) return
-
     setIsDrawing(false)
-
-    if (currentPath.length > 1) {
-      const newPath: DrawingPath = {
-        id: `${userId}-${Date.now()}`,
-        points: currentPath,
-        color: currentColor,
-        width: currentWidth,
-        tool: currentTool,
-        userId,
-      }
-
-      const newPaths = [...paths, newPath]
-      setPaths(newPaths)
-
-      // Broadcast to other users
-      if (socket) {
-        socket.emit("whiteboard-draw", roomId, newPath)
-      }
-
-      // Save to database
-      saveWhiteboardData(newPaths)
-
-      // Update history
-      const newHistory = history.slice(0, historyIndex + 1)
-      newHistory.push(newPaths)
-      setHistory(newHistory)
-      setHistoryIndex(newHistory.length - 1)
-    }
-
-    setCurrentPath([])
   }
 
   const clearCanvas = () => {
-    setPaths([])
-    if (socket) {
-      socket.emit("whiteboard-clear", roomId)
-    }
-    saveWhiteboardData([])
-
-    // Update history
-    const newHistory = history.slice(0, historyIndex + 1)
-    newHistory.push([])
-    setHistory(newHistory)
-    setHistoryIndex(newHistory.length - 1)
-  }
-
-  const undo = () => {
-    if (historyIndex > 0) {
-      setHistoryIndex(historyIndex - 1)
-      const previousPaths = history[historyIndex - 1]
-      setPaths(previousPaths)
-      saveWhiteboardData(previousPaths)
-    }
-  }
-
-  const redo = () => {
-    if (historyIndex < history.length - 1) {
-      setHistoryIndex(historyIndex + 1)
-      const nextPaths = history[historyIndex + 1]
-      setPaths(nextPaths)
-      saveWhiteboardData(nextPaths)
-    }
-  }
-
-  const downloadCanvas = () => {
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const link = document.createElement("a")
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+  }
+
+  const handleClear = () => {
+    clearCanvas()
+    setWhiteboardData([])
+    if (socket) {
+      socket.emit('whiteboard-clear', { roomId, userId, userName })
+    }
+  }
+
+  const handleShare = () => {
+    if (!socket) return
+    
+    setIsSharing(true)
+    socket.emit('share-whiteboard', {
+      roomId,
+      whiteboardData,
+      userId,
+      userName
+    })
+    
+    setTimeout(() => setIsSharing(false), 2000)
+  }
+
+  const handleDownload = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const link = document.createElement('a')
     link.download = `whiteboard-${roomId}-${Date.now()}.png`
     link.href = canvas.toDataURL()
     link.click()
   }
 
+  const handleSave = () => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const imageData = canvas.toDataURL()
+    localStorage.setItem(`whiteboard-${roomId}`, JSON.stringify({
+      imageData,
+      whiteboardData,
+      timestamp: Date.now()
+    }))
+  }
+
+  const handleLoad = () => {
+    const saved = localStorage.getItem(`whiteboard-${roomId}`)
+    if (!saved) return
+
+    try {
+      const { imageData, whiteboardData: savedData } = JSON.parse(saved)
+      const canvas = canvasRef.current
+      if (!canvas) return
+
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+
+      const img = new Image()
+      img.onload = () => {
+        clearCanvas()
+        ctx.drawImage(img, 0, 0)
+        setWhiteboardData(savedData || [])
+      }
+      img.src = imageData
+    } catch (error) {
+      console.error('Failed to load whiteboard:', error)
+    }
+  }
+
+  const colors = ['#ffffff', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff', '#000000', '#ffa500', '#800080']
+
   return (
-    <div className="h-full flex flex-col bg-white">
-      {/* Toolbar */}
-      <div className="bg-gray-100 border-b p-4 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          {/* Tools */}
+    <div className="h-full flex flex-col bg-gray-800">
+      <div className="p-4 border-b border-gray-700">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-white font-medium">Collaborative Whiteboard</h3>
           <div className="flex items-center space-x-2">
-            {tools.map((tool) => (
-              <Button
-                key={tool.id}
-                size="sm"
-                variant={currentTool === tool.id ? "default" : "outline"}
-                onClick={() => setCurrentTool(tool.id)}
-              >
-                <tool.icon className="w-4 h-4" />
-              </Button>
-            ))}
-          </div>
-
-          {/* Colors */}
-          <div className="flex items-center space-x-2">
-            <Palette className="w-4 h-4 text-gray-600" />
-            {colors.map((color) => (
-              <button
-                key={color}
-                className={`w-6 h-6 rounded-full border-2 ${
-                  currentColor === color ? "border-gray-800" : "border-gray-300"
-                }`}
-                style={{ backgroundColor: color }}
-                onClick={() => setCurrentColor(color)}
-              />
-            ))}
-          </div>
-
-          {/* Brush Size */}
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-gray-600">Size:</span>
-            <input
-              type="range"
-              min="1"
-              max="20"
-              value={currentWidth}
-              onChange={(e) => setCurrentWidth(Number.parseInt(e.target.value))}
-              className="w-20"
-            />
-            <Badge variant="outline">{currentWidth}px</Badge>
+            {activeUsers.length > 0 && (
+              <Badge variant="secondary" className="bg-green-600 text-white">
+                <Users className="w-3 h-3 mr-1" />
+                {activeUsers.length} drawing
+              </Badge>
+            )}
+            <Badge variant="outline" className="bg-gray-700 text-gray-300 border-gray-600">
+              <Eye className="w-3 h-3 mr-1" />
+              Live
+            </Badge>
           </div>
         </div>
+        
+        {/* Active users indicator */}
+        {activeUsers.length > 0 && (
+          <div className="mb-4 p-2 bg-gray-700 rounded">
+            <div className="text-xs text-gray-300 mb-1">Currently drawing:</div>
+            <div className="flex flex-wrap gap-1">
+              {activeUsers.map(user => (
+                <Badge key={user} variant="secondary" className="text-xs bg-green-600 text-white">
+                  {user}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Tools */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <Button
+            size="sm"
+            variant={tool === 'pen' ? 'default' : 'outline'}
+            onClick={() => setTool('pen')}
+            className="text-xs"
+          >
+            <Palette className="w-3 h-3 mr-1" />
+            Pen
+          </Button>
+          <Button
+            size="sm"
+            variant={tool === 'eraser' ? 'default' : 'outline'}
+            onClick={() => setTool('eraser')}
+            className="text-xs"
+          >
+            <Eraser className="w-3 h-3 mr-1" />
+            Eraser
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleClear}
+            variant="destructive"
+            className="text-xs"
+          >
+            <RotateCcw className="w-3 h-3 mr-1" />
+            Clear All
+          </Button>
+        </div>
 
-        <div className="flex items-center space-x-2">
-          <Button size="sm" variant="outline" onClick={undo} disabled={historyIndex <= 0}>
-            <Undo className="w-4 h-4" />
+        {/* Sharing Tools */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          <Button
+            size="sm"
+            onClick={handleShare}
+            disabled={isSharing}
+            className="text-xs bg-green-600 hover:bg-green-700"
+          >
+            <Share className="w-3 h-3 mr-1" />
+            {isSharing ? 'Sharing...' : 'Share Board'}
           </Button>
-          <Button size="sm" variant="outline" onClick={redo} disabled={historyIndex >= history.length - 1}>
-            <Redo className="w-4 h-4" />
+          <Button
+            size="sm"
+            onClick={handleDownload}
+            variant="outline"
+            className="text-xs"
+          >
+            <Download className="w-3 h-3 mr-1" />
+            Download
           </Button>
-          <Button size="sm" variant="outline" onClick={clearCanvas}>
-            <Trash2 className="w-4 h-4" />
+          <Button
+            size="sm"
+            onClick={handleSave}
+            variant="outline"
+            className="text-xs"
+          >
+            Save
           </Button>
-          <Button size="sm" variant="outline" onClick={downloadCanvas}>
-            <Download className="w-4 h-4" />
+          <Button
+            size="sm"
+            onClick={handleLoad}
+            variant="outline"
+            className="text-xs"
+          >
+            <Upload className="w-3 h-3 mr-1" />
+            Load
           </Button>
+        </div>
+
+        {/* Colors */}
+        <div className="flex flex-wrap gap-1 mb-4">
+          {colors.map((c) => (
+            <button
+              key={c}
+              className={`w-6 h-6 rounded border-2 ${
+                color === c ? 'border-blue-400' : 'border-gray-600'
+              }`}
+              style={{ backgroundColor: c }}
+              onClick={() => setColor(c)}
+            />
+          ))}
+        </div>
+
+        {/* Line Width */}
+        <div className="mb-4">
+          <label className="text-white text-xs mb-2 block">Brush Size</label>
+          <input
+            type="range"
+            min="1"
+            max="10"
+            value={lineWidth}
+            onChange={(e) => setLineWidth(Number(e.target.value))}
+            className="w-full"
+          />
         </div>
       </div>
 
       {/* Canvas */}
-      <div className="flex-1 relative">
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 w-full h-full cursor-crosshair"
-          onMouseDown={startDrawing}
-          onMouseMove={draw}
-          onMouseUp={stopDrawing}
-          onMouseLeave={stopDrawing}
-        />
+      <div className="flex-1 p-4">
+        <Card className="bg-white h-full">
+          <CardContent className="p-0 h-full">
+            <canvas
+              ref={canvasRef}
+              width={300}
+              height={400}
+              className="w-full h-full cursor-crosshair"
+              onMouseDown={startDrawing}
+              onMouseMove={draw}
+              onMouseUp={stopDrawing}
+              onMouseLeave={stopDrawing}
+            />
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

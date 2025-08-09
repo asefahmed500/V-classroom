@@ -1,7 +1,7 @@
 import nodemailer from "nodemailer"
 
 // Create transporter for SMTP2GO
-const transporter = nodemailer.createTransporter({
+const transporter = nodemailer.createTransport({
   host: "mail.smtp2go.com",
   port: 587,
   secure: false, // true for 465, false for other ports

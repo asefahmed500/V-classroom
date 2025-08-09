@@ -1,15 +1,32 @@
-import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
+import { withAuth } from "next-auth/middleware"
 
-export function middleware(request: NextRequest) {
-  // Handle Socket.io requests
-  if (request.nextUrl.pathname.startsWith("/socket.io")) {
-    return NextResponse.rewrite(new URL("/api/socketio", request.url))
+export default withAuth(
+  function middleware(req) {
+    // Add any additional middleware logic here
+  },
+  {
+    callbacks: {
+      authorized: ({ token, req }) => {
+        // Allow access to public routes
+        if (req.nextUrl.pathname.startsWith('/auth/') || 
+            req.nextUrl.pathname === '/' ||
+            req.nextUrl.pathname.startsWith('/api/auth/')) {
+          return true
+        }
+        
+        // Require authentication for protected routes
+        return !!token
+      },
+    },
   }
-
-  return NextResponse.next()
-}
+)
 
 export const config = {
-  matcher: ["/socket.io/:path*"],
+  matcher: [
+    '/dashboard/:path*',
+    '/profile/:path*',
+    '/rooms/:path*',
+    '/api/user/:path*',
+    '/api/rooms/:path*'
+  ]
 }

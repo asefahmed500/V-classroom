@@ -3,161 +3,141 @@
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { 
-  Send, 
-  Smile, 
-  Paperclip, 
-  Image, 
-  File,
-  MoreVertical,
-  Reply,
-  Heart,
-  ThumbsUp,
-  Laugh
-} from "lucide-react"
-import { io, type Socket } from "socket.io-client"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Send, Paperclip, Image, File, Smile } from "lucide-react"
+import { io, Socket } from "socket.io-client"
 
 interface Message {
   id: string
   userId: string
   userName: string
   content: string
+  type: "text" | "file" | "image"
   timestamp: string
-  type: "text" | "file" | "image" | "system"
   fileUrl?: string
   fileName?: string
-  reactions?: { [emoji: string]: string[] }
-  replyTo?: string
 }
 
 interface EnhancedChatProps {
   roomId: string
   userId: string
   userName: string
-  isMinimized?: boolean
-  onToggleMinimize?: () => void
 }
 
-export function EnhancedChat({ 
-  roomId, 
-  userId, 
-  userName, 
-  isMinimized = false, 
-  onToggleMinimize 
-}: EnhancedChatProps) {
+export function EnhancedChat({ roomId, userId, userName }: EnhancedChatProps) {
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [socket, setSocket] = useState<Socket | null>(null)
+  const [isTyping, setIsTyping] = useState<string[]>([])
   const [isConnected, setIsConnected] = useState(false)
-  const [typing, setTyping] = useState<string[]>([])
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [replyingTo, setReplyingTo] = useState<Message | null>(null)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const typingTimeoutRef = useRef<NodeJS.Timeout>()
 
+  // Initialize Socket.IO connection with better error handling
   useEffect(() => {
+    if (!roomId || !userId || !userName) return
+
+    const initializeSocket = async () => {
+      try {
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3000"
+        console.log("Attempting chat connection to:", socketUrl)
+        
+        const newSocket = io(socketUrl, {
+          transports: ["websocket", "polling"],
+          timeout: 10000,
+          reconnection: true,
+          reconnectionAttempts: 3,
+          reconnectionDelay: 1000,
+        })
+
+        newSocket.on("connect", () => {
+          console.log("Chat connected to Socket.IO server")
+          setIsConnected(true)
+          newSocket.emit("join-room", roomId, userId, userName)
+        })
+
+        newSocket.on("connect_error", (error) => {
+          console.error("Chat connection error:", error)
+          setIsConnected(false)
+        })
+
+        newSocket.on("disconnect", (reason) => {
+          console.log("Chat disconnected:", reason)
+          setIsConnected(false)
+        })
+
+        newSocket.on("new-message", (message: Message) => {
+          setMessages(prev => [...prev, message])
+          
+          // Show notification for messages from others
+          if (message.userId !== userId && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+            new Notification(`${message.userName} in ${roomId.slice(-8)}`, {
+              body: message.content,
+              icon: "/favicon.ico"
+            })
+          }
+        })
+
+        newSocket.on("user-typing", ({ userId: typingUserId, userName: typingUserName }) => {
+          if (typingUserId !== userId) {
+            setIsTyping(prev => [...prev.filter(name => name !== typingUserName), typingUserName])
+            
+            // Clear typing indicator after 3 seconds
+            setTimeout(() => {
+              setIsTyping(prev => prev.filter(name => name !== typingUserName))
+            }, 3000)
+          }
+        })
+
+        newSocket.on("user-stopped-typing", ({ userId: typingUserId, userName: typingUserName }) => {
+          if (typingUserId !== userId) {
+            setIsTyping(prev => prev.filter(name => name !== typingUserName))
+          }
+        })
+
+        newSocket.on("room-state", ({ messages: roomMessages }) => {
+          if (Array.isArray(roomMessages)) {
+            setMessages(roomMessages)
+          }
+        })
+
+        setSocket(newSocket)
+
+        return () => {
+          newSocket.disconnect()
+        }
+      } catch (error) {
+        console.error("Failed to initialize chat socket:", error)
+        setIsConnected(false)
+      }
+    }
+
     initializeSocket()
-    return () => {
-      if (socket) {
-        socket.disconnect()
-      }
-    }
-  }, [roomId])
+  }, [roomId, userId, userName])
 
+  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    scrollToBottom()
-    if (!isMinimized) {
-      setUnreadCount(0)
-    }
-  }, [messages, isMinimized])
-
-  const initializeSocket = () => {
-    const socketInstance = io(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000", {
-      path: "/api/socketio",
-      transports: ["websocket", "polling"],
-    })
-
-    setSocket(socketInstance)
-
-    socketInstance.on("connect", () => {
-      setIsConnected(true)
-      socketInstance.emit("join-room", roomId, userId, userName)
-    })
-
-    socketInstance.on("disconnect", () => {
-      setIsConnected(false)
-    })
-
-    socketInstance.on("new-message", (message: Message) => {
-      setMessages(prev => [...prev, message])
-      if (isMinimized && message.userId !== userId) {
-        setUnreadCount(prev => prev + 1)
-      }
-    })
-
-    socketInstance.on("user-typing", (data: { userId: string, userName: string }) => {
-      if (data.userId !== userId) {
-        setTyping(prev => [...prev.filter(id => id !== data.userId), data.userId])
-      }
-    })
-
-    socketInstance.on("user-stopped-typing", (data: { userId: string }) => {
-      setTyping(prev => prev.filter(id => id !== data.userId))
-    })
-
-    socketInstance.on("room-state", (state: any) => {
-      if (state.messages) {
-        setMessages(state.messages)
-      }
-    })
-  }
-
-  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
+  }, [messages])
 
   const sendMessage = () => {
-    if (!newMessage.trim() || !socket || !isConnected) return
+    if (!newMessage.trim() || !socket) return
 
     const messageData = {
       roomId,
       content: newMessage.trim(),
-      type: "text" as const,
-      replyTo: replyingTo?.id,
+      type: "text" as const
     }
 
     socket.emit("send-message", messageData)
     setNewMessage("")
-    setReplyingTo(null)
     
     // Stop typing indicator
-    if (typingTimeoutRef.current) {
-      clearTimeout(typingTimeoutRef.current)
-    }
-    socket.emit("typing-stop", roomId)
-  }
-
-  const handleTyping = (value: string) => {
-    setNewMessage(value)
-    
-    if (socket && isConnected) {
-      socket.emit("typing-start", roomId)
-      
-      // Clear existing timeout
-      if (typingTimeoutRef.current) {
-        clearTimeout(typingTimeoutRef.current)
-      }
-      
-      // Set new timeout to stop typing indicator
-      typingTimeoutRef.current = setTimeout(() => {
-        socket.emit("typing-stop", roomId)
-      }, 1000)
-    }
+    socket.emit("stop-typing", { roomId, userId, userName })
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -167,45 +147,59 @@ export function EnhancedChat({
     }
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !socket || !isConnected) return
+  const handleTyping = (value: string) => {
+    setNewMessage(value)
+    
+    if (!socket) return
 
-    // Check file size (10MB limit)
-    if (file.size > 10 * 1024 * 1024) {
-      alert("File size must be less than 10MB")
-      return
+    // Send typing indicator
+    socket.emit("user-typing", { roomId, userId, userName })
+    
+    // Clear previous timeout
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current)
     }
+    
+    // Set new timeout to stop typing indicator
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit("stop-typing", { roomId, userId, userName })
+    }, 1000)
+  }
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file || !socket) return
 
     try {
-      // Upload file
+      // Create FormData for file upload
       const formData = new FormData()
       formData.append("file", file)
       formData.append("roomId", roomId)
 
+      // Upload file to server
       const response = await fetch("/api/upload", {
         method: "POST",
         body: formData,
       })
 
       if (response.ok) {
-        const { fileUrl, fileName } = await response.json()
+        const data = await response.json()
         
+        // Send file message
         const messageData = {
           roomId,
-          content: `Shared a file: ${fileName}`,
+          content: file.name,
           type: file.type.startsWith("image/") ? "image" : "file",
-          fileUrl,
-          fileName,
+          fileUrl: data.url,
+          fileName: file.name
         }
 
         socket.emit("send-message", messageData)
       } else {
-        alert("Failed to upload file")
+        console.error("File upload failed")
       }
     } catch (error) {
-      console.error("File upload error:", error)
-      alert("Failed to upload file")
+      console.error("Error uploading file:", error)
     }
 
     // Reset file input
@@ -214,188 +208,107 @@ export function EnhancedChat({
     }
   }
 
-  const addReaction = (messageId: string, emoji: string) => {
-    // This would be implemented with socket events
-    console.log("Add reaction:", messageId, emoji)
-  }
-
   const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    return new Date(timestamp).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    })
   }
 
   const renderMessage = (message: Message) => {
-    const isOwn = message.userId === userId
-    const replyMessage = message.replyTo ? messages.find(m => m.id === message.replyTo) : null
-
+    const isOwnMessage = message.userId === userId
+    
     return (
-      <div key={message.id} className={`flex ${isOwn ? "justify-end" : "justify-start"} mb-4 group`}>
-        <div className={`max-w-xs lg:max-w-md ${isOwn ? "order-2" : "order-1"}`}>
-          {!isOwn && (
-            <div className="flex items-center mb-1">
-              <Avatar className="w-6 h-6 mr-2">
-                <AvatarFallback className="text-xs bg-blue-500 text-white">
-                  {message.userName.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <span className="text-xs text-gray-500">{message.userName}</span>
-              <span className="text-xs text-gray-400 ml-2">{formatTime(message.timestamp)}</span>
-            </div>
+      <div
+        key={message.id}
+        className={`flex ${isOwnMessage ? "justify-end" : "justify-start"} mb-4`}
+      >
+        <div className={`max-w-xs lg:max-w-md ${isOwnMessage ? "order-2" : "order-1"}`}>
+          {!isOwnMessage && (
+            <div className="text-xs text-gray-500 mb-1">{message.userName}</div>
           )}
-
-          {replyMessage && (
-            <div className="bg-gray-100 border-l-2 border-blue-500 p-2 mb-2 rounded text-xs">
-              <div className="font-medium text-gray-600">{replyMessage.userName}</div>
-              <div className="text-gray-500 truncate">{replyMessage.content}</div>
-            </div>
-          )}
-
+          
           <div
-            className={`p-3 rounded-lg relative ${
-              isOwn
+            className={`px-4 py-2 rounded-lg ${
+              isOwnMessage
                 ? "bg-blue-600 text-white"
-                : message.type === "system"
-                ? "bg-gray-200 text-gray-700 text-center"
-                : "bg-white border shadow-sm"
+                : "bg-gray-200 text-gray-900"
             }`}
           >
-            {message.type === "image" && message.fileUrl ? (
+            {message.type === "text" && (
+              <p className="text-sm">{message.content}</p>
+            )}
+            
+            {message.type === "image" && message.fileUrl && (
               <div>
-                <img 
-                  src={message.fileUrl} 
+                <img
+                  src={message.fileUrl}
                   alt={message.fileName}
                   className="max-w-full h-auto rounded mb-2"
-                  style={{ maxHeight: "200px" }}
                 />
-                <p className="text-sm">{message.content}</p>
+                <p className="text-xs opacity-75">{message.fileName}</p>
               </div>
-            ) : message.type === "file" && message.fileUrl ? (
+            )}
+            
+            {message.type === "file" && message.fileUrl && (
               <div className="flex items-center space-x-2">
                 <File className="w-4 h-4" />
-                <div>
-                  <a 
-                    href={message.fileUrl} 
-                    download={message.fileName}
-                    className={`${isOwn ? 'text-blue-100 hover:text-white' : 'text-blue-600 hover:text-blue-800'} underline`}
-                  >
-                    {message.fileName}
-                  </a>
-                </div>
-              </div>
-            ) : (
-              <div className="whitespace-pre-wrap break-words">{message.content}</div>
-            )}
-
-            {/* Message Actions */}
-            <div className="absolute -top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-              <div className="flex space-x-1 bg-white rounded-full shadow-lg p-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="w-6 h-6 p-0"
-                  onClick={() => addReaction(message.id, "👍")}
+                <a
+                  href={message.fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm underline hover:no-underline"
                 >
-                  <ThumbsUp className="w-3 h-3" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="w-6 h-6 p-0"
-                  onClick={() => addReaction(message.id, "❤️")}
-                >
-                  <Heart className="w-3 h-3" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="w-6 h-6 p-0"
-                  onClick={() => setReplyingTo(message)}
-                >
-                  <Reply className="w-3 h-3" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Reactions */}
-            {message.reactions && Object.keys(message.reactions).length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {Object.entries(message.reactions).map(([emoji, users]) => (
-                  <Badge
-                    key={emoji}
-                    variant="secondary"
-                    className="text-xs cursor-pointer hover:bg-gray-200"
-                    onClick={() => addReaction(message.id, emoji)}
-                  >
-                    {emoji} {users.length}
-                  </Badge>
-                ))}
+                  {message.fileName}
+                </a>
               </div>
             )}
           </div>
-
-          {isOwn && (
-            <div className="text-xs text-gray-400 text-right mt-1">
-              {formatTime(message.timestamp)}
-            </div>
-          )}
+          
+          <div className="text-xs text-gray-500 mt-1">
+            {formatTime(message.timestamp)}
+          </div>
         </div>
-      </div>
-    )
-  }
-
-  if (isMinimized) {
-    return (
-      <div className="fixed bottom-4 right-4 z-50">
-        <Button
-          onClick={onToggleMinimize}
-          className="rounded-full w-14 h-14 bg-blue-600 hover:bg-blue-700 shadow-lg relative"
-        >
-          <Send className="w-6 h-6" />
-          {unreadCount > 0 && (
-            <Badge className="absolute -top-2 -right-2 bg-red-500 text-white min-w-[20px] h-5 text-xs">
-              {unreadCount > 99 ? "99+" : unreadCount}
-            </Badge>
-          )}
-        </Button>
       </div>
     )
   }
 
   return (
-    <div className="flex flex-col h-full bg-white border-l">
+    <div className="flex flex-col h-full bg-white">
       {/* Header */}
-      <div className="p-4 border-b bg-gray-50">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Send className="w-5 h-5 text-blue-600" />
-            <h3 className="font-semibold">Chat</h3>
-            <Badge variant={isConnected ? "default" : "destructive"} className="text-xs">
-              {isConnected ? "Connected" : "Disconnected"}
-            </Badge>
-          </div>
-          {onToggleMinimize && (
-            <Button variant="ghost" size="sm" onClick={onToggleMinimize}>
-              <MoreVertical className="w-4 h-4" />
-            </Button>
-          )}
+      <div className="p-4 border-b bg-gray-50 flex items-center justify-between">
+        <h3 className="font-semibold text-gray-900">Chat</h3>
+        <div className="flex items-center space-x-2">
+          <Badge variant={isConnected ? "default" : "destructive"} className="text-xs">
+            {isConnected ? "Connected" : "Disconnected"}
+          </Badge>
         </div>
       </div>
 
       {/* Messages */}
       <ScrollArea className="flex-1 p-4">
-        <div className="space-y-1">
-          {messages.map(renderMessage)}
+        <div className="space-y-2">
+          {messages.length === 0 ? (
+            <div className="text-center text-gray-500 py-8">
+              <p>No messages yet. Start the conversation!</p>
+            </div>
+          ) : (
+            messages.map(renderMessage)
+          )}
           
           {/* Typing indicators */}
-          {typing.length > 0 && (
-            <div className="flex items-center space-x-2 text-sm text-gray-500 italic">
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+          {isTyping.length > 0 && (
+            <div className="flex justify-start mb-4">
+              <div className="bg-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm">
+                <div className="flex items-center space-x-1">
+                  <span>{isTyping.join(", ")} {isTyping.length === 1 ? "is" : "are"} typing</span>
+                  <div className="flex space-x-1">
+                    <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce"></div>
+                    <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
+                    <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+                  </div>
+                </div>
               </div>
-              <span>
-                {typing.length === 1 ? "Someone is typing..." : `${typing.length} people are typing...`}
-              </span>
             </div>
           )}
           
@@ -403,72 +316,44 @@ export function EnhancedChat({
         </div>
       </ScrollArea>
 
-      {/* Reply Preview */}
-      {replyingTo && (
-        <div className="px-4 py-2 bg-blue-50 border-t border-blue-200">
-          <div className="flex items-center justify-between">
-            <div className="flex-1">
-              <div className="text-xs text-blue-600 font-medium">Replying to {replyingTo.userName}</div>
-              <div className="text-sm text-gray-600 truncate">{replyingTo.content}</div>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setReplyingTo(null)}
-              className="text-gray-400 hover:text-gray-600"
-            >
-              ×
-            </Button>
-          </div>
-        </div>
-      )}
-
       {/* Input */}
       <div className="p-4 border-t bg-gray-50">
         <div className="flex items-center space-x-2">
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            className="hidden"
-            accept="image/*,.pdf,.doc,.docx,.txt"
-          />
-          
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={() => fileInputRef.current?.click()}
-            className="text-gray-500 hover:text-gray-700"
+            className="shrink-0"
           >
             <Paperclip className="w-4 h-4" />
           </Button>
-
-          <div className="flex-1 relative">
-            <Input
-              value={newMessage}
-              onChange={(e) => handleTyping(e.target.value)}
-              onKeyPress={handleKeyPress}
-              placeholder="Type a message..."
-              className="pr-10"
-              disabled={!isConnected}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="absolute right-1 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-            >
-              <Smile className="w-4 h-4" />
-            </Button>
-          </div>
-
-          <Button 
-            onClick={sendMessage} 
+          
+          <Input
+            value={newMessage}
+            onChange={(e) => handleTyping(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="Type a message..."
+            className="flex-1"
+            disabled={!isConnected}
+          />
+          
+          <Button
+            onClick={sendMessage}
             disabled={!newMessage.trim() || !isConnected}
-            className="bg-blue-600 hover:bg-blue-700"
+            size="sm"
+            className="shrink-0"
           >
             <Send className="w-4 h-4" />
           </Button>
         </div>
+        
+        <input
+          ref={fileInputRef}
+          type="file"
+          onChange={handleFileUpload}
+          className="hidden"
+          accept="image/*,.pdf,.doc,.docx,.txt"
+        />
       </div>
     </div>
   )

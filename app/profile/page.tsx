@@ -1,356 +1,334 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useSession, signOut } from "next-auth/react"
 import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { 
-  User, 
-  Mail, 
-  School, 
-  GraduationCap, 
-  Calendar, 
-  Clock, 
-  Users, 
-  BookOpen,
+import {
+  User,
+  Mail,
+  Calendar,
   Settings,
+  LogOut,
+  ArrowLeft,
+  Edit,
+  Save,
+  X,
+  Trophy,
+  Clock,
+  Target,
+  BookOpen,
+  Users,
+  Video,
+  Brain,
+  Star,
+  TrendingUp,
+  Award,
   Shield,
   Bell,
-  Camera,
-  Edit3,
-  Save,
-  ArrowLeft,
-  Trash2,
   Eye,
   EyeOff
 } from "lucide-react"
 import Link from "next/link"
-import { useToast } from "@/hooks/use-toast"
 
 interface UserProfile {
-  _id: string
   name: string
   email: string
-  grade: string
-  school: string
-  bio?: string
-  avatar?: string
-  studyStats: {
-    totalStudyTime: number
-    roomsJoined: number
-    studyStreak: number
+  joinedAt: string
+  studyPreferences: {
+    subjects: string[]
+    studyTimes: string[]
+    goals: string
   }
-  preferences: {
+  stats: {
+    totalStudyTime: number
+    studySessions: number
+    achievements: number
+    currentStreak: number
+  }
+  settings: {
     notifications: boolean
     publicProfile: boolean
-    showOnlineStatus: boolean
+    emailUpdates: boolean
   }
-  createdAt: string
-}
-
-interface UserRoom {
-  _id: string
-  name: string
-  subject: string
-  roomType: string
-  participants: number
-  maxParticipants: number
-  isHost: boolean
-  createdAt: string
-  lastActive: string
 }
 
 export default function ProfilePage() {
-  const [user, setUser] = useState<UserProfile | null>(null)
-  const [userRooms, setUserRooms] = useState<UserRoom[]>([])
+  const { data: session, status } = useSession()
+  const router = useRouter()
+  const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [activeTab, setActiveTab] = useState("profile")
-  const [formData, setFormData] = useState({
+  const [editForm, setEditForm] = useState({
     name: "",
-    email: "",
-    grade: "",
-    school: "",
-    bio: "",
-    preferences: {
-      notifications: true,
-      publicProfile: true,
-      showOnlineStatus: true,
-    }
+    subjects: "",
+    goals: ""
   })
 
-  const router = useRouter()
-  const { toast } = useToast()
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/auth/signin")
+    }
+  }, [status, router])
 
   useEffect(() => {
-    fetchUserProfile()
-    fetchUserRooms()
-  }, [])
-
-  const fetchUserProfile = async () => {
-    try {
-      const response = await fetch("/api/auth/me")
-      if (response.ok) {
-        const userData = await response.json()
-        setUser(userData)
-        setFormData({
-          name: userData.name,
-          email: userData.email,
-          grade: userData.grade,
-          school: userData.school,
-          bio: userData.bio || "",
-          preferences: userData.preferences || {
+    const loadProfile = async () => {
+      if (!session?.user) {
+        setLoading(false)
+        return
+      }
+      
+      try {
+        const response = await fetch('/api/user/profile', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          setProfile(data.profile)
+          setEditForm({
+            name: data.profile.name || '',
+            subjects: (data.profile.studyPreferences?.subjects || []).join(", "),
+            goals: data.profile.studyPreferences?.goals || ''
+          })
+        } else {
+          throw new Error('Failed to fetch profile')
+        }
+      } catch (error) {
+        console.error('Failed to load profile:', error)
+        // Set default profile if API fails
+        const defaultProfile = {
+          name: session.user.name || "User",
+          email: session.user.email || "",
+          joinedAt: new Date().toISOString(),
+          studyPreferences: {
+            subjects: ["Mathematics", "Science"],
+            studyTimes: ["Morning", "Evening"],
+            goals: "Improve academic performance"
+          },
+          stats: {
+            totalStudyTime: 0,
+            studySessions: 0,
+            achievements: 0,
+            currentStreak: 0
+          },
+          settings: {
             notifications: true,
-            publicProfile: true,
-            showOnlineStatus: true,
+            publicProfile: false,
+            emailUpdates: true
           }
+        }
+        setProfile(defaultProfile)
+        setEditForm({
+          name: defaultProfile.name,
+          subjects: defaultProfile.studyPreferences.subjects.join(", "),
+          goals: defaultProfile.studyPreferences.goals
         })
-      } else {
-        router.push("/auth/login")
+      } finally {
+        setLoading(false)
       }
-    } catch (error) {
-      console.error("Failed to fetch user profile:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load profile",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const fetchUserRooms = async () => {
-    try {
-      const response = await fetch("/api/user/rooms")
-      if (response.ok) {
-        const data = await response.json()
-        setUserRooms(data.rooms || [])
-      }
-    } catch (error) {
-      console.error("Failed to fetch user rooms:", error)
-    }
-  }
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      const response = await fetch("/api/user/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      })
-
-      if (response.ok) {
-        const updatedUser = await response.json()
-        setUser(updatedUser.user)
-        setEditing(false)
-        toast({
-          title: "Success!",
-          description: "Profile updated successfully",
-        })
-      } else {
-        const error = await response.json()
-        toast({
-          title: "Error",
-          description: error.message || "Failed to update profile",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Network error occurred",
-        variant: "destructive",
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleDeleteRoom = async (roomId: string) => {
-    if (!confirm("Are you sure you want to delete this room? This action cannot be undone.")) {
-      return
     }
 
-    try {
-      const response = await fetch(`/api/rooms/${roomId}`, {
-        method: "DELETE",
-      })
-
-      if (response.ok) {
-        setUserRooms(prev => prev.filter(room => room._id !== roomId))
-        toast({
-          title: "Success!",
-          description: "Room deleted successfully",
-        })
-      } else {
-        const error = await response.json()
-        toast({
-          title: "Error",
-          description: error.message || "Failed to delete room",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Network error occurred",
-        variant: "destructive",
-      })
+    if (session) {
+      loadProfile()
     }
-  }
+  }, [session])
 
   const handleLogout = async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" })
-      router.push("/")
-    } catch (error) {
-      console.error("Logout error:", error)
-      router.push("/")
+    if (confirm("Are you sure you want to logout?")) {
+      await signOut({ callbackUrl: "/" })
     }
   }
 
-  if (loading) {
+  const handleSaveProfile = async () => {
+    try {
+      const response = await fetch('/api/user/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: editForm.name.trim(),
+          studyPreferences: {
+            subjects: editForm.subjects.split(",").map(s => s.trim()).filter(s => s),
+            goals: editForm.goals.trim()
+          }
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setProfile(data.profile)
+        setEditing(false)
+        // Show success message
+        console.log('Profile updated successfully')
+      } else {
+        const errorData = await response.json()
+        console.error('Failed to update profile:', errorData.error)
+        alert('Failed to update profile. Please try again.')
+      }
+    } catch (error) {
+      console.error('Failed to update profile:', error)
+      alert('Failed to update profile. Please try again.')
+    }
+  }
+
+  const updateSettings = async (key: string, value: boolean) => {
+    try {
+      const response = await fetch('/api/user/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [key]: value })
+      })
+
+      if (response.ok && profile) {
+        setProfile({
+          ...profile,
+          settings: {
+            ...profile.settings,
+            [key]: value
+          }
+        })
+        console.log(`Setting ${key} updated to ${value}`)
+      } else {
+        const errorData = await response.json()
+        console.error('Failed to update settings:', errorData.error)
+        alert('Failed to update settings. Please try again.')
+      }
+    } catch (error) {
+      console.error('Failed to update settings:', error)
+      alert('Failed to update settings. Please try again.')
+    }
+  }
+
+  if (status === "loading" || loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading profile...</p>
+          <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full animate-pulse mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading your profile...</p>
         </div>
       </div>
     )
   }
 
-  if (!user) {
+  if (status === "unauthenticated") {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <Card className="max-w-md">
-          <CardHeader className="text-center">
-            <CardTitle>Profile Not Found</CardTitle>
-          </CardHeader>
-          <CardContent className="text-center">
-            <Link href="/auth/login">
-              <Button>Sign In</Button>
-            </Link>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Authentication Required</h1>
+          <p className="text-gray-600 mb-4">Please sign in to view your profile.</p>
+          <Link href="/auth/signin">
+            <Button>Sign In</Button>
+          </Link>
+        </div>
       </div>
     )
   }
 
+  if (!session || !profile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Profile Not Found</h1>
+          <p className="text-gray-600 mb-4">Unable to load your profile. Please try again.</p>
+          <Button onClick={() => window.location.reload()}>Refresh Page</Button>
+        </div>
+      </div>
+    )
+  }
+
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map(n => n[0])
+      .join("")
+      .toUpperCase()
+  }
+
+  const formatJoinDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    })
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       {/* Header */}
-      <div className="bg-white border-b">
-        <div className="container mx-auto px-4 py-4">
+      <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <Link href="/dashboard">
-                <Button variant="ghost" size="sm">
+                <Button variant="outline" size="sm">
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   Back to Dashboard
                 </Button>
               </Link>
-              <h1 className="text-2xl font-bold">My Profile</h1>
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">Profile</h1>
+                <p className="text-sm text-gray-600">Manage your account and preferences</p>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              {editing ? (
-                <>
-                  <Button onClick={() => setEditing(false)} variant="outline" size="sm">
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSave} disabled={saving} size="sm">
-                    <Save className="w-4 h-4 mr-2" />
-                    {saving ? "Saving..." : "Save Changes"}
-                  </Button>
-                </>
-              ) : (
-                <Button onClick={() => setEditing(true)} size="sm">
-                  <Edit3 className="w-4 h-4 mr-2" />
-                  Edit Profile
-                </Button>
-              )}
-              <Button onClick={handleLogout} variant="destructive" size="sm">
-                Logout
-              </Button>
-            </div>
+            
+            <Button 
+              onClick={handleLogout}
+              variant="destructive"
+              className="bg-red-600 hover:bg-red-700"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Logout
+            </Button>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-4 py-8 max-w-6xl">
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid lg:grid-cols-4 gap-8">
           {/* Profile Sidebar */}
           <div className="lg:col-span-1">
-            <Card>
+            <Card className="shadow-xl border-0">
               <CardContent className="p-6 text-center">
-                <div className="relative mb-4">
-                  <Avatar className="w-24 h-24 mx-auto">
-                    <AvatarImage src={user.avatar} />
-                    <AvatarFallback className="text-2xl bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-                      {user.name.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  {editing && (
-                    <Button size="sm" className="absolute -bottom-2 left-1/2 transform -translate-x-1/2">
-                      <Camera className="w-3 h-3" />
-                    </Button>
-                  )}
-                </div>
+                <Avatar className="h-24 w-24 mx-auto mb-4">
+                  <AvatarFallback className="bg-gradient-to-r from-blue-600 to-purple-600 text-white text-2xl">
+                    {getInitials(profile.name)}
+                  </AvatarFallback>
+                </Avatar>
                 
-                <h2 className="text-xl font-bold mb-1">{user.name}</h2>
-                <p className="text-gray-600 mb-2">{user.email}</p>
-                <div className="flex items-center justify-center space-x-2 mb-4">
-                  <Badge variant="outline">{user.grade}th Grade</Badge>
-                  <Badge variant="outline">{user.school}</Badge>
-                </div>
-                
-                {user.bio && (
-                  <p className="text-sm text-gray-600 mb-4">{user.bio}</p>
-                )}
+                <h2 className="text-xl font-bold text-gray-900 mb-1">{profile.name}</h2>
+                <p className="text-gray-600 text-sm mb-2">{profile.email}</p>
+                <Badge className="bg-blue-100 text-blue-700 mb-4">
+                  <Calendar className="w-3 h-3 mr-1" />
+                  Joined {formatJoinDate(profile.joinedAt)}
+                </Badge>
 
-                <div className="text-xs text-gray-500">
-                  Member since {new Date(user.createdAt).toLocaleDateString()}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Quick Stats */}
-            <Card className="mt-6">
-              <CardHeader>
-                <CardTitle className="text-lg">Study Stats</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Clock className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm">Study Time</span>
+                {/* Quick Stats */}
+                <div className="grid grid-cols-2 gap-3 mt-6">
+                  <div className="text-center p-3 bg-blue-50 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">{profile.stats.studySessions}</div>
+                    <div className="text-xs text-gray-600">Sessions</div>
                   </div>
-                  <span className="font-semibold">{user.studyStats.totalStudyTime}h</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Users className="w-4 h-4 text-green-600" />
-                    <span className="text-sm">Rooms Joined</span>
+                  <div className="text-center p-3 bg-green-50 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">{profile.stats.totalStudyTime}h</div>
+                    <div className="text-xs text-gray-600">Study Time</div>
                   </div>
-                  <span className="font-semibold">{user.studyStats.roomsJoined}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <BookOpen className="w-4 h-4 text-purple-600" />
-                    <span className="text-sm">Study Streak</span>
+                  <div className="text-center p-3 bg-purple-50 rounded-lg">
+                    <div className="text-2xl font-bold text-purple-600">{profile.stats.achievements}</div>
+                    <div className="text-xs text-gray-600">Achievements</div>
                   </div>
-                  <span className="font-semibold">{user.studyStats.studyStreak} days</span>
+                  <div className="text-center p-3 bg-orange-50 rounded-lg">
+                    <div className="text-2xl font-bold text-orange-600">{profile.stats.currentStreak}</div>
+                    <div className="text-xs text-gray-600">Day Streak</div>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -358,232 +336,310 @@ export default function ProfilePage() {
 
           {/* Main Content */}
           <div className="lg:col-span-3">
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="profile">Profile Info</TabsTrigger>
-                <TabsTrigger value="rooms">My Rooms</TabsTrigger>
-                <TabsTrigger value="settings">Settings</TabsTrigger>
+            <Tabs defaultValue="profile" className="w-full">
+              <TabsList className="grid w-full grid-cols-3 mb-6">
+                <TabsTrigger value="profile" className="flex items-center gap-2">
+                  <User className="w-4 h-4" />
+                  Profile
+                </TabsTrigger>
+                <TabsTrigger value="achievements" className="flex items-center gap-2">
+                  <Trophy className="w-4 h-4" />
+                  Achievements
+                </TabsTrigger>
+                <TabsTrigger value="settings" className="flex items-center gap-2">
+                  <Settings className="w-4 h-4" />
+                  Settings
+                </TabsTrigger>
               </TabsList>
 
               {/* Profile Tab */}
-              <TabsContent value="profile" className="space-y-6">
-                <Card>
+              <TabsContent value="profile">
+                <Card className="shadow-xl border-0">
                   <CardHeader>
-                    <CardTitle>Personal Information</CardTitle>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle>Personal Information</CardTitle>
+                        <CardDescription>Update your profile details and study preferences</CardDescription>
+                      </div>
+                      {!editing ? (
+                        <Button onClick={() => setEditing(true)} variant="outline">
+                          <Edit className="w-4 h-4 mr-2" />
+                          Edit Profile
+                        </Button>
+                      ) : (
+                        <div className="flex space-x-2">
+                          <Button onClick={handleSaveProfile} size="sm">
+                            <Save className="w-4 h-4 mr-2" />
+                            Save
+                          </Button>
+                          <Button onClick={() => setEditing(false)} variant="outline" size="sm">
+                            <X className="w-4 h-4 mr-2" />
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   </CardHeader>
-                  <CardContent className="space-y-4">
+                  <CardContent className="space-y-6">
+                    {/* Basic Information */}
                     <div className="grid md:grid-cols-2 gap-4">
                       <div>
                         <Label htmlFor="name">Full Name</Label>
-                        <Input
-                          id="name"
-                          value={formData.name}
-                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                          disabled={!editing}
-                        />
+                        {editing ? (
+                          <Input
+                            id="name"
+                            value={editForm.name}
+                            onChange={(e) => setEditForm({...editForm, name: e.target.value})}
+                            className="mt-1"
+                          />
+                        ) : (
+                          <div className="mt-1 p-2 bg-gray-50 rounded border">{profile.name}</div>
+                        )}
                       </div>
                       <div>
                         <Label htmlFor="email">Email Address</Label>
-                        <Input
-                          id="email"
-                          type="email"
-                          value={formData.email}
-                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                          disabled={!editing}
-                        />
+                        <div className="mt-1 p-2 bg-gray-50 rounded border text-gray-600">
+                          {profile.email} (Cannot be changed)
+                        </div>
                       </div>
                     </div>
 
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="grade">Grade Level</Label>
-                        <Select 
-                          value={formData.grade} 
-                          onValueChange={(value) => setFormData({ ...formData, grade: value })}
-                          disabled={!editing}
-                        >
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="9">9th Grade</SelectItem>
-                            <SelectItem value="10">10th Grade</SelectItem>
-                            <SelectItem value="11">11th Grade</SelectItem>
-                            <SelectItem value="12">12th Grade</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label htmlFor="school">School Name</Label>
+                    {/* Study Preferences */}
+                    <div>
+                      <Label htmlFor="subjects">Favorite Subjects</Label>
+                      {editing ? (
                         <Input
-                          id="school"
-                          value={formData.school}
-                          onChange={(e) => setFormData({ ...formData, school: e.target.value })}
-                          disabled={!editing}
+                          id="subjects"
+                          value={editForm.subjects}
+                          onChange={(e) => setEditForm({...editForm, subjects: e.target.value})}
+                          placeholder="Mathematics, Science, History (comma separated)"
+                          className="mt-1"
                         />
-                      </div>
+                      ) : (
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {profile.studyPreferences.subjects.map((subject, index) => (
+                            <Badge key={index} variant="secondary">
+                              {subject}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div>
-                      <Label htmlFor="bio">Bio (Optional)</Label>
-                      <Textarea
-                        id="bio"
-                        placeholder="Tell us about yourself, your study interests, goals..."
-                        value={formData.bio}
-                        onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
-                        disabled={!editing}
-                        rows={3}
-                      />
+                      <Label htmlFor="goals">Study Goals</Label>
+                      {editing ? (
+                        <Input
+                          id="goals"
+                          value={editForm.goals}
+                          onChange={(e) => setEditForm({...editForm, goals: e.target.value})}
+                          placeholder="What are your study goals?"
+                          className="mt-1"
+                        />
+                      ) : (
+                        <div className="mt-1 p-2 bg-gray-50 rounded border">{profile.studyPreferences.goals}</div>
+                      )}
+                    </div>
+
+                    {/* Preferred Study Times */}
+                    <div>
+                      <Label>Preferred Study Times</Label>
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {profile.studyPreferences.studyTimes.map((time, index) => (
+                          <Badge key={index} className="bg-blue-100 text-blue-700">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {time}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
               </TabsContent>
 
-              {/* Rooms Tab */}
-              <TabsContent value="rooms" className="space-y-6">
-                <Card>
+              {/* Achievements Tab */}
+              <TabsContent value="achievements">
+                <Card className="shadow-xl border-0">
                   <CardHeader>
-                    <CardTitle>My Study Rooms ({userRooms.length})</CardTitle>
+                    <CardTitle className="flex items-center">
+                      <Trophy className="w-5 h-5 mr-2 text-yellow-500" />
+                      Achievements & Progress
+                    </CardTitle>
+                    <CardDescription>Track your learning milestones and accomplishments</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    {userRooms.length === 0 ? (
-                      <div className="text-center py-8">
-                        <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                        <p className="text-gray-600 mb-4">You haven't created any rooms yet</p>
-                        <Link href="/rooms/create">
-                          <Button>Create Your First Room</Button>
-                        </Link>
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* Achievement Badges */}
+                      <div>
+                        <h3 className="font-semibold text-gray-900 mb-4">Earned Badges</h3>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg border border-yellow-200 text-center">
+                            <Star className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
+                            <div className="text-sm font-medium text-gray-900">First Session</div>
+                            <div className="text-xs text-gray-600">Completed your first study session</div>
+                          </div>
+                          <div className="p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border border-blue-200 text-center">
+                            <Users className="w-8 h-8 text-blue-500 mx-auto mb-2" />
+                            <div className="text-sm font-medium text-gray-900">Team Player</div>
+                            <div className="text-xs text-gray-600">Joined 5 study groups</div>
+                          </div>
+                          <div className="p-4 bg-gradient-to-br from-green-50 to-green-100 rounded-lg border border-green-200 text-center">
+                            <Target className="w-8 h-8 text-green-500 mx-auto mb-2" />
+                            <div className="text-sm font-medium text-gray-900">Consistent</div>
+                            <div className="text-xs text-gray-600">7-day study streak</div>
+                          </div>
+                          <div className="p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border border-purple-200 text-center">
+                            <Brain className="w-8 h-8 text-purple-500 mx-auto mb-2" />
+                            <div className="text-sm font-medium text-gray-900">AI Helper</div>
+                            <div className="text-xs text-gray-600">Used AI tutor 10 times</div>
+                          </div>
+                        </div>
                       </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {userRooms.map((room) => (
-                          <div key={room._id} className="border rounded-lg p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex-1">
-                                <div className="flex items-center space-x-2 mb-2">
-                                  <h3 className="font-semibold">{room.name}</h3>
-                                  <Badge variant="outline">{room.subject}</Badge>
-                                  {room.isHost && <Badge>Host</Badge>}
-                                </div>
-                                <div className="flex items-center space-x-4 text-sm text-gray-600">
-                                  <span>{room.participants}/{room.maxParticipants} participants</span>
-                                  <span>Created {new Date(room.createdAt).toLocaleDateString()}</span>
-                                  <span>Last active {new Date(room.lastActive).toLocaleDateString()}</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center space-x-2">
-                                <Link href={`/rooms/${room._id}`}>
-                                  <Button size="sm" variant="outline">
-                                    <Eye className="w-3 h-3 mr-1" />
-                                    View
-                                  </Button>
-                                </Link>
-                                {room.isHost && (
-                                  <Button 
-                                    size="sm" 
-                                    variant="destructive"
-                                    onClick={() => handleDeleteRoom(room._id)}
-                                  >
-                                    <Trash2 className="w-3 h-3 mr-1" />
-                                    Delete
-                                  </Button>
-                                )}
-                              </div>
+
+                      {/* Progress Stats */}
+                      <div>
+                        <h3 className="font-semibold text-gray-900 mb-4">Progress Overview</h3>
+                        <div className="space-y-4">
+                          <div className="p-4 bg-gray-50 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium text-gray-900">Study Sessions</span>
+                              <span className="text-sm text-gray-600">{profile.stats.studySessions}/50</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="bg-blue-600 h-2 rounded-full" 
+                                style={{ width: `${Math.min((profile.stats.studySessions / 50) * 100, 100)}%` }}
+                              ></div>
                             </div>
                           </div>
-                        ))}
+
+                          <div className="p-4 bg-gray-50 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium text-gray-900">Study Hours</span>
+                              <span className="text-sm text-gray-600">{profile.stats.totalStudyTime}/100h</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="bg-green-600 h-2 rounded-full" 
+                                style={{ width: `${Math.min((profile.stats.totalStudyTime / 100) * 100, 100)}%` }}
+                              ></div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 bg-gray-50 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium text-gray-900">Current Streak</span>
+                              <span className="text-sm text-gray-600">{profile.stats.currentStreak} days</span>
+                            </div>
+                            <div className="flex items-center space-x-1">
+                              {[...Array(7)].map((_, i) => (
+                                <div
+                                  key={i}
+                                  className={`w-4 h-4 rounded ${
+                                    i < profile.stats.currentStreak ? 'bg-orange-500' : 'bg-gray-200'
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>
 
               {/* Settings Tab */}
-              <TabsContent value="settings" className="space-y-6">
-                <Card>
+              <TabsContent value="settings">
+                <Card className="shadow-xl border-0">
                   <CardHeader>
-                    <CardTitle>Privacy & Preferences</CardTitle>
+                    <CardTitle className="flex items-center">
+                      <Settings className="w-5 h-5 mr-2 text-gray-600" />
+                      Account Settings
+                    </CardTitle>
+                    <CardDescription>Manage your privacy and notification preferences</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <Bell className="w-5 h-5 text-blue-600" />
-                        <div>
-                          <div className="font-medium">Email Notifications</div>
-                          <div className="text-sm text-gray-600">Receive emails about room invitations and updates</div>
+                    {/* Notification Settings */}
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-4">Notifications</h3>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <Bell className="w-5 h-5 text-gray-600" />
+                            <div>
+                              <div className="font-medium text-gray-900">Push Notifications</div>
+                              <div className="text-sm text-gray-600">Get notified about study reminders and room invites</div>
+                            </div>
+                          </div>
+                          <Button
+                            variant={profile.settings.notifications ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => updateSettings('notifications', !profile.settings.notifications)}
+                          >
+                            {profile.settings.notifications ? 'On' : 'Off'}
+                          </Button>
+                        </div>
+
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <Mail className="w-5 h-5 text-gray-600" />
+                            <div>
+                              <div className="font-medium text-gray-900">Email Updates</div>
+                              <div className="text-sm text-gray-600">Receive weekly progress reports and tips</div>
+                            </div>
+                          </div>
+                          <Button
+                            variant={profile.settings.emailUpdates ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => updateSettings('emailUpdates', !profile.settings.emailUpdates)}
+                          >
+                            {profile.settings.emailUpdates ? 'On' : 'Off'}
+                          </Button>
                         </div>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={formData.preferences.notifications}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          preferences: { ...formData.preferences, notifications: e.target.checked }
-                        })}
-                        disabled={!editing}
-                        className="w-4 h-4"
-                      />
                     </div>
 
-                    <Separator />
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <User className="w-5 h-5 text-green-600" />
-                        <div>
-                          <div className="font-medium">Public Profile</div>
-                          <div className="text-sm text-gray-600">Allow others to see your profile information</div>
+                    {/* Privacy Settings */}
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-4">Privacy</h3>
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            {profile.settings.publicProfile ? (
+                              <Eye className="w-5 h-5 text-gray-600" />
+                            ) : (
+                              <EyeOff className="w-5 h-5 text-gray-600" />
+                            )}
+                            <div>
+                              <div className="font-medium text-gray-900">Public Profile</div>
+                              <div className="text-sm text-gray-600">Allow others to see your study stats and achievements</div>
+                            </div>
+                          </div>
+                          <Button
+                            variant={profile.settings.publicProfile ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => updateSettings('publicProfile', !profile.settings.publicProfile)}
+                          >
+                            {profile.settings.publicProfile ? 'Public' : 'Private'}
+                          </Button>
                         </div>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={formData.preferences.publicProfile}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          preferences: { ...formData.preferences, publicProfile: e.target.checked }
-                        })}
-                        disabled={!editing}
-                        className="w-4 h-4"
-                      />
                     </div>
 
-                    <Separator />
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-5 h-5 bg-green-500 rounded-full"></div>
-                        <div>
-                          <div className="font-medium">Show Online Status</div>
-                          <div className="text-sm text-gray-600">Let others see when you're online</div>
-                        </div>
+                    {/* Account Actions */}
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-4">Account Actions</h3>
+                      <div className="space-y-3">
+                        <Button 
+                          onClick={handleLogout}
+                          variant="destructive" 
+                          className="w-full bg-red-600 hover:bg-red-700"
+                        >
+                          <LogOut className="w-4 h-4 mr-2" />
+                          Logout from Account
+                        </Button>
                       </div>
-                      <input
-                        type="checkbox"
-                        checked={formData.preferences.showOnlineStatus}
-                        onChange={(e) => setFormData({
-                          ...formData,
-                          preferences: { ...formData.preferences, showOnlineStatus: e.target.checked }
-                        })}
-                        disabled={!editing}
-                        className="w-4 h-4"
-                      />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-red-600">Danger Zone</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="border border-red-200 rounded-lg p-4">
-                      <h4 className="font-medium text-red-600 mb-2">Delete Account</h4>
-                      <p className="text-sm text-gray-600 mb-4">
-                        Permanently delete your account and all associated data. This action cannot be undone.
-                      </p>
-                      <Button variant="destructive" size="sm">
-                        Delete Account
-                      </Button>
                     </div>
                   </CardContent>
                 </Card>

@@ -64,7 +64,7 @@ export function Navbar() {
 
           {/* Desktop Auth Buttons */}
           <div className="hidden lg:flex items-center space-x-4">
-            <Link href="/auth/login">
+            <Link href="/auth/signin">
               <Button variant="ghost" className="font-medium hover:bg-blue-50 hover:text-blue-600">
                 Sign In
               </Button>
@@ -142,7 +142,7 @@ export function Navbar() {
 
                 {/* Mobile Auth Buttons */}
                 <div className="border-t p-6 space-y-3">
-                  <Link href="/auth/login" onClick={() => setIsOpen(false)}>
+                  <Link href="/auth/signin" onClick={() => setIsOpen(false)}>
                     <Button variant="outline" className="w-full font-medium bg-transparent">
                       Sign In
                     </Button>

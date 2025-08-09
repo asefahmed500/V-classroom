@@ -25,7 +25,7 @@ const envSchema = z.object({
 
   // Socket.io
   SOCKET_PORT: z.coerce.number().default(3001),
-  NEXT_PUBLIC_SOCKET_URL: z.string().default("http://localhost:3001"),
+  NEXT_PUBLIC_SOCKET_URL: z.string().default("http://localhost:3000"),
 
   // Redis
   REDIS_URL: z.string().optional(),
@@ -75,7 +75,7 @@ const envSchema = z.object({
 
   // Security
   NEXT_PUBLIC_CSP_NONCE: z.string().optional(),
-  CORS_ORIGIN: z.string().default("http://localhost:3000,http://localhost:3001"),
+  CORS_ORIGIN: z.string().default("http://localhost:3000"),
 
   // Database Pool
   DB_MIN_POOL_SIZE: z.coerce.number().default(5),

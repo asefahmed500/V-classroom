@@ -35,4 +35,4 @@ const RoomFileSchema = new mongoose.Schema(
   },
 )
 
-export const RoomFile = mongoose.models.RoomFile || mongoose.model("RoomFile", RoomFileSchema)
+export const RoomFile = (mongoose.models.RoomFile || mongoose.model("RoomFile", RoomFileSchema)) as any

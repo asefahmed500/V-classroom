@@ -1,45 +1,59 @@
+import { MongoClient, Db } from "mongodb"
 import mongoose from "mongoose"
 
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/virtual-study-rooms"
-
-if (!MONGODB_URI) {
-  throw new Error("Please define the MONGODB_URI environment variable")
+const uri = process.env.MONGODB_URI || "mongodb://localhost:27017/virtual-study-rooms"
+const options = {
+  serverSelectionTimeoutMS: 5000,
+  socketTimeoutMS: 45000,
+  maxPoolSize: 10,
+  minPoolSize: 5,
 }
 
-interface GlobalMongoose {
-  conn: typeof mongoose | null
-  promise: Promise<typeof mongoose> | null
-}
+let client: MongoClient
+let clientPromise: Promise<MongoClient>
 
-declare global {
-  var myMongoose: GlobalMongoose | undefined
-}
-
-let cached = global.myMongoose
-
-if (!cached) {
-  cached = global.myMongoose = { conn: null, promise: null }
-}
-
-export async function connectDB() {
-  if (cached!.conn) {
-    return cached!.conn
+if (process.env.NODE_ENV === "development") {
+  let globalWithMongo = global as typeof globalThis & {
+    _mongoClientPromise?: Promise<MongoClient>
   }
 
-  if (!cached!.promise) {
-    const opts = {
-      bufferCommands: false,
-    }
-
-    cached!.promise = mongoose.connect(MONGODB_URI, opts)
+  if (!globalWithMongo._mongoClientPromise) {
+    client = new MongoClient(uri, options)
+    globalWithMongo._mongoClientPromise = client.connect()
   }
+  clientPromise = globalWithMongo._mongoClientPromise
+} else {
+  client = new MongoClient(uri, options)
+  clientPromise = client.connect()
+}
 
+export async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
   try {
-    cached!.conn = await cached!.promise
-  } catch (e) {
-    cached!.promise = null
-    throw e
+    const client = await clientPromise
+    const db = client.db("virtualclassdb") // Use the correct database name from env
+    return { client, db }
+  } catch (error) {
+    console.error("MongoDB connection error:", error)
+    throw error
   }
-
-  return cached!.conn
 }
+
+// Mongoose connection helper
+export async function connectMongoose() {
+  try {
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(uri, {
+        serverSelectionTimeoutMS: 5000,
+        socketTimeoutMS: 45000,
+        maxPoolSize: 10,
+        minPoolSize: 5,
+      })
+    }
+    return mongoose.connection
+  } catch (error) {
+    console.error("Mongoose connection error:", error)
+    throw error
+  }
+}
+
+export default clientPromise

@@ -1,25 +1,28 @@
-import { NextResponse } from "next/server"
-import { connectDB } from "@/lib/mongodb"
+import { NextResponse } from 'next/server'
+import { connectMongoose } from '@/lib/mongodb'
+
+export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    await connectDB()
-
+    // Test database connection
+    await connectMongoose()
+    
     return NextResponse.json({
-      status: "healthy",
+      status: 'healthy',
       timestamp: new Date().toISOString(),
-      database: "connected",
-      version: "1.0.0",
+      database: 'connected',
+      environment: process.env.NODE_ENV || 'unknown'
     })
   } catch (error) {
-    return NextResponse.json(
-      {
-        status: "unhealthy",
-        timestamp: new Date().toISOString(),
-        database: "disconnected",
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    )
+    console.error('Health check failed:', error)
+    
+    return NextResponse.json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      environment: process.env.NODE_ENV || 'unknown'
+    }, { status: 500 })
   }
 }

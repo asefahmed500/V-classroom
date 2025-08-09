@@ -1,39 +1,30 @@
-import { NextResponse } from "next/server"
-import { connectDB } from "@/lib/mongodb"
-import { User } from "@/models/User"
-import { StudyRoom } from "@/models/StudyRoom"
+import { NextRequest, NextResponse } from 'next/server'
+import { connectToDatabase } from '@/lib/mongodb'
 
-export async function GET() {
+export const dynamic = 'force-dynamic'
+
+export async function GET(request: NextRequest) {
   try {
-    console.log("Testing database connection...")
-    await connectDB()
-
-    // Test basic operations
-    const userCount = await User.countDocuments()
-    const roomCount = await StudyRoom.countDocuments()
-
-    // Test index creation
-    const userIndexes = await User.collection.getIndexes()
-    const roomIndexes = await StudyRoom.collection.getIndexes()
-
+    const { db } = await connectToDatabase()
+    
+    // Test database connection by running a simple query
+    const result = await db.admin().ping()
+    
     return NextResponse.json({
-      status: "success",
-      database: "connected",
-      collections: {
-        users: { count: userCount, indexes: Object.keys(userIndexes).length },
-        rooms: { count: roomCount, indexes: Object.keys(roomIndexes).length },
-      },
-      timestamp: new Date().toISOString(),
+      success: true,
+      message: 'Database connection successful',
+      timestamp: new Date().toISOString()
     })
+
   } catch (error) {
-    console.error("Database test failed:", error)
+    console.error('Database test error:', error)
     return NextResponse.json(
-      {
-        status: "error",
-        message: error instanceof Error ? error.message : "Unknown error",
-        timestamp: new Date().toISOString(),
+      { 
+        success: false,
+        error: 'Database connection failed',
+        message: error instanceof Error ? error.message : 'Unknown error'
       },
-      { status: 500 },
+      { status: 500 }
     )
   }
 }

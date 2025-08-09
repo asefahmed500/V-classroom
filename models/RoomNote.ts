@@ -43,4 +43,4 @@ const RoomNoteSchema = new mongoose.Schema(
   },
 )
 
-export const RoomNote = mongoose.models.RoomNote || mongoose.model("RoomNote", RoomNoteSchema)
+export const RoomNote = (mongoose.models.RoomNote || mongoose.model("RoomNote", RoomNoteSchema)) as any

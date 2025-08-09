@@ -1,443 +1,219 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { useState, useEffect, useRef } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { io, Socket } from 'socket.io-client'
 import { 
-  Plus, 
-  Edit, 
-  Trash2, 
-  Save, 
-  X, 
   FileText, 
-  User, 
-  Clock,
-  Download,
-  Share2
-} from "lucide-react"
-import { io, type Socket } from "socket.io-client"
-
-interface Note {
-  id: string
-  title: string
-  content: string
-  createdBy: string
-  createdByName: string
-  createdAt: string
-  updatedAt: string
-  isEditing?: boolean
-}
+  Save, 
+  Download, 
+  Users
+} from 'lucide-react'
 
 interface CollaborativeNotesProps {
   roomId: string
   userId: string
+  userName?: string
 }
 
-export function CollaborativeNotes({ roomId, userId }: CollaborativeNotesProps) {
-  const [notes, setNotes] = useState<Note[]>([])
+export const CollaborativeNotes = ({ roomId, userId, userName = 'Anonymous' }: CollaborativeNotesProps) => {
+  const [content, setContent] = useState('')
+  const [lastSaved, setLastSaved] = useState<Date | null>(null)
+  const [collaborators, setCollaborators] = useState<string[]>([])
   const [socket, setSocket] = useState<Socket | null>(null)
-  const [isCreating, setIsCreating] = useState(false)
-  const [newNote, setNewNote] = useState({ title: "", content: "" })
-  const [editingNote, setEditingNote] = useState<string | null>(null)
-  const [currentUser, setCurrentUser] = useState({ id: "", name: "" })
+  
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  // Initialize socket connection
   useEffect(() => {
-    fetchCurrentUser()
-    fetchNotes()
-    initializeSocket()
+    const newSocket = io()
+    setSocket(newSocket)
 
     return () => {
-      if (socket) {
-        socket.disconnect()
-      }
+      newSocket.close()
     }
   }, [])
 
-  const fetchCurrentUser = async () => {
-    try {
-      const response = await fetch("/api/auth/me")
-      if (response.ok) {
-        const user = await response.json()
-        setCurrentUser({ id: user._id, name: user.name })
+  // Load initial notes data
+  useEffect(() => {
+    const loadNotes = async () => {
+      try {
+        const response = await fetch(`/api/notes/save?roomId=${roomId}`)
+        if (response.ok) {
+          const data = await response.json()
+          setContent(data.content || '')
+          if (data.lastModifiedAt) {
+            setLastSaved(new Date(data.lastModifiedAt))
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load notes:', error)
       }
-    } catch (error) {
-      console.error("Failed to fetch current user:", error)
-      setCurrentUser({ id: `user_${Date.now()}`, name: "Student" })
     }
-  }
 
-  const fetchNotes = async () => {
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/notes`)
-      if (response.ok) {
-        const data = await response.json()
-        setNotes(data.notes || [])
+    if (roomId) {
+      loadNotes()
+    }
+  }, [roomId])
+
+  // Socket event listeners
+  useEffect(() => {
+    if (!socket) return
+
+    socket.on('notes-update', (newContent: string) => {
+      setContent(newContent)
+    })
+
+    socket.on('user-typing', ({ userId: typingUserId, userName: typingUserName, isTyping: typing }) => {
+      if (typingUserId !== userId) {
+        setCollaborators(prev => {
+          if (typing) {
+            return prev.includes(typingUserName) ? prev : [...prev, typingUserName]
+          } else {
+            return prev.filter(name => name !== typingUserName)
+          }
+        })
       }
-    } catch (error) {
-      console.error("Failed to fetch notes:", error)
+    })
+
+    socket.on('notes-saved', ({ timestamp }) => {
+      setLastSaved(new Date(timestamp))
+    })
+
+    return () => {
+      socket.off('notes-update')
+      socket.off('user-typing')
+      socket.off('notes-saved')
     }
+  }, [socket, userId])
+
+  // Handle content change
+  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newContent = e.target.value
+    setContent(newContent)
+
+    // Broadcast content change
+    if (socket) {
+      socket.emit('notes-update', { roomId, notes: newContent })
+    }
+
+    // Handle typing indicator
+    socket?.emit('user-typing', { roomId, userId, userName, isTyping: true })
+
+    // Clear typing after 1 second
+    setTimeout(() => {
+      socket?.emit('user-typing', { roomId, userId, userName, isTyping: false })
+    }, 1000)
   }
 
-  const initializeSocket = () => {
-    const socketInstance = io(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000", {
-      path: "/api/socketio",
-      transports: ["websocket", "polling"],
-    })
-
-    setSocket(socketInstance)
-
-    socketInstance.on("connect", () => {
-      socketInstance.emit("join-room", roomId, userId)
-    })
-
-    socketInstance.on("note-created", (note: Note) => {
-      setNotes(prev => [note, ...prev])
-    })
-
-    socketInstance.on("note-updated", (updatedNote: Note) => {
-      setNotes(prev => prev.map(note => 
-        note.id === updatedNote.id ? updatedNote : note
-      ))
-    })
-
-    socketInstance.on("note-deleted", (noteId: string) => {
-      setNotes(prev => prev.filter(note => note.id !== noteId))
-    })
-  }
-
-  const createNote = async () => {
-    if (!newNote.title.trim() || !newNote.content.trim()) return
-
+  // Save notes
+  const saveNotes = async () => {
     try {
-      const response = await fetch(`/api/rooms/${roomId}/notes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch('/api/notes/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: newNote.title.trim(),
-          content: newNote.content.trim(),
-        }),
+          roomId,
+          content,
+          userId,
+          userName
+        })
       })
 
       if (response.ok) {
-        const data = await response.json()
-        const note = data.note
-
-        // Add to local state
-        setNotes(prev => [note, ...prev])
-
-        // Broadcast to other users
+        const timestamp = new Date()
+        setLastSaved(timestamp)
+        
         if (socket) {
-          socket.emit("note-create", {
-            roomId,
-            title: note.title,
-            content: note.content,
-          })
-        }
-
-        // Reset form
-        setNewNote({ title: "", content: "" })
-        setIsCreating(false)
-      }
-    } catch (error) {
-      console.error("Failed to create note:", error)
-    }
-  }
-
-  const updateNote = async (noteId: string, title: string, content: string) => {
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/notes/${noteId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim(), content: content.trim() }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        const updatedNote = data.note
-
-        // Update local state
-        setNotes(prev => prev.map(note => 
-          note.id === noteId ? updatedNote : note
-        ))
-
-        // Broadcast to other users
-        if (socket) {
-          socket.emit("note-update", {
-            roomId,
-            noteId,
-            title: updatedNote.title,
-            content: updatedNote.content,
-          })
-        }
-
-        setEditingNote(null)
-      }
-    } catch (error) {
-      console.error("Failed to update note:", error)
-    }
-  }
-
-  const deleteNote = async (noteId: string) => {
-    if (!confirm("Are you sure you want to delete this note?")) return
-
-    try {
-      const response = await fetch(`/api/rooms/${roomId}/notes/${noteId}`, {
-        method: "DELETE",
-      })
-
-      if (response.ok) {
-        setNotes(prev => prev.filter(note => note.id !== noteId))
-
-        if (socket) {
-          socket.emit("note-delete", { roomId, noteId })
+          socket.emit('notes-saved', { roomId, timestamp: timestamp.toISOString() })
         }
       }
     } catch (error) {
-      console.error("Failed to delete note:", error)
+      console.error('Failed to save notes:', error)
     }
   }
 
-  const exportNotes = () => {
-    const notesText = notes.map(note => 
-      `# ${note.title}\n\nCreated by: ${note.createdByName}\nCreated: ${new Date(note.createdAt).toLocaleString()}\n\n${note.content}\n\n---\n\n`
-    ).join("")
-
-    const blob = new Blob([notesText], { type: "text/markdown" })
+  // Download notes
+  const downloadNotes = () => {
+    const blob = new Blob([content], { type: 'text/plain' })
     const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = url
-    link.download = `study-notes-${roomId}-${Date.now()}.md`
-    link.click()
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `notes-${roomId}-${new Date().toISOString().split('T')[0]}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
     URL.revokeObjectURL(url)
   }
 
-  const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleString()
-  }
-
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b">
-        <div className="flex items-center space-x-2">
-          <FileText className="w-5 h-5 text-blue-600" />
-          <h3 className="font-semibold">Collaborative Notes</h3>
-          <Badge variant="outline">{notes.length} notes</Badge>
+    <Card className="w-full h-full flex flex-col">
+      <CardHeader className="pb-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center">
+            <FileText className="w-5 h-5 mr-2" />
+            Collaborative Notes
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            {collaborators.length > 0 && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Users className="w-3 h-3" />
+                {collaborators.length} typing
+              </Badge>
+            )}
+            {lastSaved && (
+              <Badge variant="outline" className="text-xs">
+                Saved {lastSaved.toLocaleTimeString()}
+              </Badge>
+            )}
+          </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={exportNotes}
-            disabled={notes.length === 0}
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Export
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => setIsCreating(true)}
-            disabled={isCreating}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            New Note
-          </Button>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 p-4">
-        <ScrollArea className="h-full">
-          <div className="space-y-4">
-            {/* Create New Note Form */}
-            {isCreating && (
-              <Card className="border-blue-200 bg-blue-50">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-lg">Create New Note</CardTitle>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setIsCreating(false)
-                        setNewNote({ title: "", content: "" })
-                      }}
-                    >
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <Input
-                    placeholder="Note title..."
-                    value={newNote.title}
-                    onChange={(e) => setNewNote(prev => ({ ...prev, title: e.target.value }))}
-                  />
-                  <Textarea
-                    placeholder="Start writing your note..."
-                    value={newNote.content}
-                    onChange={(e) => setNewNote(prev => ({ ...prev, content: e.target.value }))}
-                    rows={6}
-                  />
-                  <div className="flex justify-end space-x-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => {
-                        setIsCreating(false)
-                        setNewNote({ title: "", content: "" })
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={createNote}
-                      disabled={!newNote.title.trim() || !newNote.content.trim()}
-                    >
-                      <Save className="w-4 h-4 mr-2" />
-                      Create Note
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Notes List */}
-            {notes.length === 0 && !isCreating ? (
-              <div className="text-center py-12 text-gray-500">
-                <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No notes yet</p>
-                <p className="text-sm">Create your first collaborative note to get started</p>
-              </div>
-            ) : (
-              notes.map((note) => (
-                <NoteCard
-                  key={note.id}
-                  note={note}
-                  isEditing={editingNote === note.id}
-                  currentUserId={currentUser.id}
-                  onEdit={() => setEditingNote(note.id)}
-                  onSave={(title, content) => updateNote(note.id, title, content)}
-                  onCancel={() => setEditingNote(null)}
-                  onDelete={() => deleteNote(note.id)}
-                />
-              ))
-            )}
-          </div>
-        </ScrollArea>
-      </div>
-    </div>
-  )
-}
-
-interface NoteCardProps {
-  note: Note
-  isEditing: boolean
-  currentUserId: string
-  onEdit: () => void
-  onSave: (title: string, content: string) => void
-  onCancel: () => void
-  onDelete: () => void
-}
-
-function NoteCard({ note, isEditing, currentUserId, onEdit, onSave, onCancel, onDelete }: NoteCardProps) {
-  const [editTitle, setEditTitle] = useState(note.title)
-  const [editContent, setEditContent] = useState(note.content)
-
-  const handleSave = () => {
-    if (editTitle.trim() && editContent.trim()) {
-      onSave(editTitle, editContent)
-    }
-  }
-
-  const handleCancel = () => {
-    setEditTitle(note.title)
-    setEditContent(note.content)
-    onCancel()
-  }
-
-  const canEdit = note.createdBy === currentUserId
-
-  return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardHeader className="pb-3">
-        {isEditing ? (
-          <div className="space-y-2">
-            <Input
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              className="font-semibold"
-            />
-            <div className="flex justify-end space-x-2">
-              <Button size="sm" variant="outline" onClick={handleCancel}>
-                Cancel
-              </Button>
-              <Button 
-                size="sm" 
-                onClick={handleSave}
-                disabled={!editTitle.trim() || !editContent.trim()}
-              >
-                <Save className="w-4 h-4 mr-2" />
-                Save
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <CardTitle className="text-lg">{note.title}</CardTitle>
-              <div className="flex items-center space-x-4 text-sm text-gray-500 mt-2">
-                <div className="flex items-center">
-                  <User className="w-3 h-3 mr-1" />
-                  {note.createdByName}
-                </div>
-                <div className="flex items-center">
-                  <Clock className="w-3 h-3 mr-1" />
-                  {formatTime(note.createdAt)}
-                </div>
-                {note.updatedAt !== note.createdAt && (
-                  <Badge variant="secondary" className="text-xs">
-                    Updated {formatTime(note.updatedAt)}
-                  </Badge>
-                )}
-              </div>
-            </div>
-            {canEdit && (
-              <div className="flex items-center space-x-1 ml-4">
-                <Button size="sm" variant="ghost" onClick={onEdit}>
-                  <Edit className="w-4 h-4" />
-                </Button>
-                <Button 
-                  size="sm" 
-                  variant="ghost" 
-                  onClick={onDelete}
-                  className="text-red-600 hover:text-red-700"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
       </CardHeader>
-      <CardContent>
-        {isEditing ? (
-          <Textarea
-            value={editContent}
-            onChange={(e) => setEditContent(e.target.value)}
-            rows={8}
-            className="resize-none"
+      
+      <CardContent className="flex-1 flex flex-col space-y-4">
+        {/* Editor */}
+        <div className="flex-1 relative">
+          <textarea
+            ref={textareaRef}
+            value={content}
+            onChange={handleContentChange}
+            placeholder="Start taking collaborative notes... Everyone in the room can edit this document in real-time."
+            className="w-full h-full min-h-[400px] p-4 border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
           />
-        ) : (
-          <div className="whitespace-pre-wrap text-gray-700">
-            {note.content}
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-between items-center pt-2 border-t">
+          <div className="text-sm text-gray-600">
+            {collaborators.length > 0 && (
+              <span>
+                • {collaborators.join(', ')} {collaborators.length === 1 ? 'is' : 'are'} typing...
+              </span>
+            )}
           </div>
-        )}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={saveNotes}
+              className="flex items-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              Save
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadNotes}
+              className="flex items-center gap-2"
+            >
+              <Download className="w-4 h-4" />
+              Download
+            </Button>
+          </div>
+        </div>
       </CardContent>
     </Card>
   )

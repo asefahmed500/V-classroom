@@ -18,14 +18,19 @@ export function RoomCodeInput() {
 
     setLoading(true)
     try {
-      // First, find the room by code
-      const response = await fetch(`/api/rooms/join/${roomCode.toUpperCase()}`)
+      // Use the new lookup endpoint
+      const response = await fetch('/api/rooms/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier: roomCode.trim() })
+      })
+
       if (response.ok) {
         const data = await response.json()
-        router.push(`/rooms/${data.roomId}`)
+        router.push(`/rooms/${data.room.id}`)
       } else {
         const error = await response.json()
-        alert(error.message || "Room not found")
+        alert(error.message || error.error || "Room not found")
       }
     } catch (error) {
       console.error("Join room error:", error)
@@ -43,19 +48,18 @@ export function RoomCodeInput() {
           Join with Room Code
         </CardTitle>
         <CardDescription>
-          Enter a 6-character room code to join a private study room
+          Enter a room code to join a study room
         </CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleJoin} className="flex space-x-2">
           <Input
             value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            placeholder="ABC123"
-            maxLength={6}
+            onChange={(e) => setRoomCode(e.target.value.trim())}
+            placeholder="Enter room code"
             className="font-mono text-center text-lg tracking-wider"
           />
-          <Button type="submit" disabled={loading || roomCode.length !== 6}>
+          <Button type="submit" disabled={loading || !roomCode.trim()}>
             {loading ? "Joining..." : <ArrowRight className="w-4 h-4" />}
           </Button>
         </form>

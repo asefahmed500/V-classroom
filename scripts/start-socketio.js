@@ -6,11 +6,14 @@ const { Server } = require('socket.io')
 const httpServer = createServer()
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+    origin: ["http://localhost:3000", "http://192.168.0.102:3000"],
     methods: ["GET", "POST"],
     credentials: true,
   },
   transports: ["websocket", "polling"],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
 })
 
 // Store room data and user connections

@@ -113,3 +113,5 @@ jspm_packages/
 
 # MongoDB data
 /data/db
+
+.vercel

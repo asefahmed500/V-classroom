@@ -62,69 +62,98 @@ export function ParticipantsList({ participants, roomId, currentUserId }: Partic
   }, [roomId])
 
   const initializeSocket = () => {
-    const socketInstance = io(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000", {
-      path: "/api/socketio",
-      transports: ["websocket", "polling"],
-    })
-
-    setSocket(socketInstance)
-
-    socketInstance.on("connect", () => {
-      if (roomId && currentUserId) {
-        socketInstance.emit("join-room", roomId, currentUserId)
-      }
-    })
-
-    socketInstance.on("user-joined", (userData: any) => {
-      setLocalParticipants(prev => {
-        const exists = prev.find(p => p.id === userData.id)
-        if (exists) return prev
-        
-        return [...prev, {
-          id: userData.id,
-          name: userData.name,
-          isHost: false,
-          videoEnabled: userData.videoEnabled || true,
-          audioEnabled: userData.audioEnabled || true,
-          isActive: true,
-          joinedAt: new Date().toISOString(),
-        }]
+    try {
+      const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3000"
+      console.log("Attempting participants connection to:", socketUrl)
+      
+      const socketInstance = io(socketUrl, {
+        transports: ["websocket", "polling"],
+        timeout: 10000,
+        reconnection: true,
+        reconnectionAttempts: 3,
+        reconnectionDelay: 1000,
       })
-    })
 
-    socketInstance.on("user-left", (userData: any) => {
-      setLocalParticipants(prev => prev.filter(p => p.id !== userData.userId))
-    })
+      setSocket(socketInstance)
 
-    socketInstance.on("user-video-toggle", (data: any) => {
-      setLocalParticipants(prev => prev.map(p => 
-        p.id === data.userId ? { ...p, videoEnabled: data.enabled } : p
-      ))
-    })
+      socketInstance.on("connect", () => {
+        console.log("Participants connected to Socket.IO server")
+        if (roomId && currentUserId) {
+          socketInstance.emit("join-room", roomId, currentUserId)
+        }
+      })
 
-    socketInstance.on("user-audio-toggle", (data: any) => {
-      setLocalParticipants(prev => prev.map(p => 
-        p.id === data.userId ? { ...p, audioEnabled: data.enabled } : p
-      ))
-    })
+      socketInstance.on("connect_error", (error) => {
+        console.error("Participants connection error:", error)
+      })
 
-    socketInstance.on("user-screen-share-start", (data: any) => {
-      setLocalParticipants(prev => prev.map(p => 
-        p.id === data.userId ? { ...p, isScreenSharing: true } : p
-      ))
-    })
+      socketInstance.on("user-joined", (userData: any) => {
+        if (userData && userData.id) {
+          setLocalParticipants(prev => {
+            const exists = prev.find(p => p.id === userData.id)
+            if (exists) return prev
+            
+            return [...prev, {
+              id: userData.id,
+              name: userData.name || 'Anonymous',
+              isHost: false,
+              videoEnabled: userData.videoEnabled || true,
+              audioEnabled: userData.audioEnabled || true,
+              isActive: true,
+              joinedAt: new Date().toISOString(),
+            }]
+          })
+        }
+      })
 
-    socketInstance.on("user-screen-share-stop", (data: any) => {
-      setLocalParticipants(prev => prev.map(p => 
-        p.id === data.userId ? { ...p, isScreenSharing: false } : p
-      ))
-    })
+      socketInstance.on("user-left", (userData: any) => {
+        if (userData && userData.userId) {
+          setLocalParticipants(prev => prev.filter(p => p.id !== userData.userId))
+        }
+      })
 
-    socketInstance.on("hand-raised", (data: any) => {
-      setLocalParticipants(prev => prev.map(p => 
-        p.id === data.userId ? { ...p, isHandRaised: data.raised } : p
-      ))
-    })
+      socketInstance.on("user-video-toggle", (data: any) => {
+        if (data && data.userId) {
+          setLocalParticipants(prev => prev.map(p => 
+            p.id === data.userId ? { ...p, videoEnabled: data.enabled } : p
+          ))
+        }
+      })
+
+      socketInstance.on("user-audio-toggle", (data: any) => {
+        if (data && data.userId) {
+          setLocalParticipants(prev => prev.map(p => 
+            p.id === data.userId ? { ...p, audioEnabled: data.enabled } : p
+          ))
+        }
+      })
+
+      socketInstance.on("user-screen-share-start", (data: any) => {
+        if (data && data.userId) {
+          setLocalParticipants(prev => prev.map(p => 
+            p.id === data.userId ? { ...p, isScreenSharing: true } : p
+          ))
+        }
+      })
+
+      socketInstance.on("user-screen-share-stop", (data: any) => {
+        if (data && data.userId) {
+          setLocalParticipants(prev => prev.map(p => 
+            p.id === data.userId ? { ...p, isScreenSharing: false } : p
+          ))
+        }
+      })
+
+      socketInstance.on("hand-raised", (data: any) => {
+        if (data && data.userId) {
+          setLocalParticipants(prev => prev.map(p => 
+            p.id === data.userId ? { ...p, isHandRaised: data.raised } : p
+          ))
+        }
+      })
+    } catch (error) {
+      console.error("Failed to initialize participants socket:", error)
+    }
   }
 
   const toggleHandRaise = (participantId: string) => {
@@ -141,7 +170,8 @@ export function ParticipantsList({ participants, roomId, currentUserId }: Partic
   }
 
   const getInitials = (name: string) => {
-    return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
+    if (!name || typeof name !== 'string') return 'U'
+    return name.split(" ").map(n => n && n[0] ? n[0] : '').join("").toUpperCase().slice(0, 2) || 'U'
   }
 
   const formatJoinTime = (joinedAt?: string) => {

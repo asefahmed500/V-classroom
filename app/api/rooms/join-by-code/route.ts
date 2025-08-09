@@ -1,74 +1,54 @@
 import { NextRequest, NextResponse } from "next/server"
-import { connectDB } from "@/lib/mongodb"
-import { verifyToken } from "@/lib/auth"
-import { StudyRoom } from "@/models/StudyRoom"
+import { connectMongoose } from '@/lib/mongodb'
+import { handleApiError } from '@/lib/api-helpers'
+
+const Room = require("@/models/Room")
+
+export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
-    await connectDB()
+    const { roomCode, userName, userEmail } = await request.json()
 
-    // Verify authentication
-    const userId = await verifyToken(request)
-    if (!userId) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
+    if (!roomCode || !userName) {
+      return NextResponse.json(
+        { error: 'Room code and user name are required' },
+        { status: 400 }
+      )
     }
 
-    const { roomCode } = await request.json()
+    await connectMongoose()
 
-    if (!roomCode) {
-      return NextResponse.json({ message: "Room code is required" }, { status: 400 })
-    }
-
-    // Find room by code
-    const room = await StudyRoom.findOne({ 
+    // Find room by room code
+    const room = await Room.findOne({ 
       roomCode: roomCode.toUpperCase(),
       isActive: true 
     })
 
     if (!room) {
-      return NextResponse.json({ message: "Invalid room code" }, { status: 404 })
+      return NextResponse.json({ 
+        error: "Room not found",
+        message: `Room with code ${roomCode} does not exist or is not active` 
+      }, { status: 404 })
     }
 
     // Check if room is full
     if (room.participants.length >= room.maxParticipants) {
-      return NextResponse.json({ message: "Room is full" }, { status: 400 })
-    }
-
-    // Check if user is already in the room
-    const isAlreadyParticipant = room.participants.some(
-      (p: any) => p.userId.toString() === userId
-    )
-
-    if (isAlreadyParticipant) {
-      return NextResponse.json({
-        success: true,
-        room: {
-          _id: room._id,
-          name: room.name,
-          subject: room.subject,
-        },
-        message: "Already in room",
-      })
+      return NextResponse.json({ 
+        error: "Room is full",
+        message: `Room has reached maximum capacity of ${room.maxParticipants} participants` 
+      }, { status: 400 })
     }
 
     return NextResponse.json({
       success: true,
-      room: {
-        _id: room._id,
-        name: room.name,
-        subject: room.subject,
-        roomType: room.roomType,
-        participants: room.participants.length,
-        maxParticipants: room.maxParticipants,
-      },
-      message: "Room found",
+      roomId: room._id.toString(),
+      roomCode: room.roomCode,
+      roomName: room.name,
+      subject: room.subject
     })
 
   } catch (error) {
-    console.error("Join by code error:", error)
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    )
+    return handleApiError(error, "Join room by code")
   }
 }

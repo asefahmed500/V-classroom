@@ -259,8 +259,36 @@ st initializeSocket = () => {
       localStream.getTracks().forEach(track => track.stop())
     }
     socket?.disconnect()
-  }  con
-st renderVideoGrid = () => {
+  }
+
+  const VideoTile = ({ participant, isLocal, localVideoRef }: any) => (
+    <div className="relative bg-gray-800 rounded-lg overflow-hidden">
+      <video
+        ref={isLocal ? localVideoRef : undefined}
+        autoPlay
+        muted={isLocal}
+        playsInline
+        className="w-full h-full object-cover"
+      />
+      <div className="absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm">
+        {participant.name}
+      </div>
+      <div className="absolute top-2 right-2 flex space-x-1">
+        {!participant.audioEnabled && (
+          <div className="bg-red-500 rounded-full p-1">
+            <MicOff className="w-3 h-3 text-white" />
+          </div>
+        )}
+        {!participant.videoEnabled && (
+          <div className="bg-red-500 rounded-full p-1">
+            <VideoOff className="w-3 h-3 text-white" />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
+  const renderVideoGrid = () => {
     const allParticipants = [
       { id: userId, name: `${userName} (You)`, videoEnabled: isVideoEnabled, 
         audioEnabled: isAudioEnabled, isScreenSharing, isSpeaking: false, isLocal: true },
