@@ -67,11 +67,12 @@ export function MultiUserVideoChat({ roomId, userId, userName, onLeave }: MultiU
     } catch (error) {
       console.error("Failed to access media:", error)
     }
-  }  con
-st initializeSocket = () => {
+  }
+
+  const initializeSocket = () => {
     const socketInstance = io(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000", {
-      path: "/api/socketio",
-      transports: ["websocket", "polling"],
+      path: "/socket.io/",
+      transports: ["polling", "websocket"],
     })
 
     setSocket(socketInstance)
@@ -140,8 +141,9 @@ st initializeSocket = () => {
       await peerConnection.setLocalDescription(offer)
       socket?.emit("webrtc-offer", { roomId, offer, from: userId })
     }
-  }  const
- handleOffer = async (offer: RTCSessionDescriptionInit, fromUserId: string) => {
+  }
+
+  const handleOffer = async (offer: RTCSessionDescriptionInit, fromUserId: string) => {
     let peerConnection = peerConnections.current.get(fromUserId)
     if (!peerConnection) {
       await createPeerConnection(fromUserId, false)
@@ -197,8 +199,9 @@ st initializeSocket = () => {
         setIsAudioEnabled(audioTrack.enabled)
       }
     }
-  } 
- const startScreenShare = async () => {
+  }
+
+  const startScreenShare = async () => {
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({
         video: true, audio: true
@@ -275,12 +278,12 @@ st initializeSocket = () => {
       </div>
       <div className="absolute top-2 right-2 flex space-x-1">
         {!participant.audioEnabled && (
-          <div className="bg-red-500 rounded-full p-1">
+          <div key="mic-off" className="bg-red-500 rounded-full p-1">
             <MicOff className="w-3 h-3 text-white" />
           </div>
         )}
         {!participant.videoEnabled && (
-          <div className="bg-red-500 rounded-full p-1">
+          <div key="video-off" className="bg-red-500 rounded-full p-1">
             <VideoOff className="w-3 h-3 text-white" />
           </div>
         )}
@@ -324,7 +327,7 @@ st initializeSocket = () => {
         <Badge variant={isConnected ? "default" : "destructive"}>
           {isConnected ? "🟢 Connected" : "🔴 Disconnected"}
         </Badge>
-        <Badge variant="outline" className="text-white border-white/20">
+        <Badge variant="outline" className="text-white border-white/40 bg-black/30">
           <Users className="w-3 h-3 mr-1" />
           {participants.length + 1} participants
         </Badge>

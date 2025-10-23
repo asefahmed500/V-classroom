@@ -87,19 +87,19 @@ npm install
 Create `.env.local` file:
 ```env
 # Database
-MONGODB_URI=mongodb+srv://vclass:aGTxTwLljK8TVRJW@cluster0.8vksczm.mongodb.net/virtualclassdb?retryWrites=true&w=majority&appName=Cluster0
+MONGODB_URI=
 
 # Authentication
 NEXTAUTH_URL=http://localhost:3000
 NEXTAUTH_SECRET=5e58e644fef05659d4dc3818318878b37ee7736106770b73daab47c9bb0d22dd
 
 # Cloudinary (File Storage)
-CLOUDINARY_CLOUD_NAME=dyb9cwe9p
-CLOUDINARY_API_KEY=731877583831933
-CLOUDINARY_API_SECRET=TKkCCAmh3cmE3IZyPnTHuiKDc3g
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
 
 # AI Integration
-GEMINI_API_KEY=AIzaSyCXSj04JZ4qcx9m0dOPuTfEy4O8Jr4RzfM
+GEMINI_API_KEY=
 
 # Environment
 NODE_ENV=development

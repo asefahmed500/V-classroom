@@ -13,6 +13,8 @@ import {
   Mic, MicOff, Video, VideoOff, Monitor, Hand, PhoneOff,
   MessageSquare, FileText, Palette
 } from "lucide-react"
+import { GoogleMeetRoomInterface } from "@/components/google-meet-room-interface"
+import { FeatureDiagnostics } from "@/components/feature-diagnostics"
 
 interface RoomData {
   id: string
@@ -97,15 +99,24 @@ export default function RoomSessionPage() {
   }
 
   return (
-    <GoogleMeetRoomInterface
-      roomId={roomId}
-      roomName={roomData.name}
-      roomCode={roomData.roomCode}
-      userId={session.user.id!}
-      userName={session.user.name!}
-      userEmail={session.user.email!}
-      isHost={session.user.id === roomData.createdBy}
-      onLeave={handleLeaveRoom}
-    />
+    <div className="min-h-screen bg-gray-900 p-4">
+      <div className="mb-4">
+        <FeatureDiagnostics
+          roomId={roomId}
+          userId={session.user.id!}
+          userName={session.user.name!}
+        />
+      </div>
+      <GoogleMeetRoomInterface
+        roomId={roomId}
+        roomName={roomData.name}
+        roomCode={roomData.roomCode}
+        userId={session.user.id!}
+        userName={session.user.name!}
+        userEmail={session.user.email!}
+        isHost={session.user.id === roomData.createdBy}
+        onLeave={handleLeaveRoom}
+      />
+    </div>
   )
 }

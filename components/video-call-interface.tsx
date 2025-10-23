@@ -1,25 +1,23 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   Mic, MicOff, Video, VideoOff, Phone, Monitor, 
-  Users, MessageSquare, FileText, Palette, Share2,
-  Settings, Grid3X3, Maximize, Minimize, MoreVertical,
-  PhoneOff, Hand, HandMetal, Volume2, VolumeX, Wifi,
-  WifiOff, Clock, Eye, EyeOff, Camera, CameraOff,
-  Copy, Link, UserPlus, Shield, Crown, Zap, Star, X
+  Users, MessageSquare, FileText, Share2, Settings,
+  Grid3X3, Maximize, Minimize, MoreVertical,
+  PhoneOff, Hand, HandMetal, Volume2, VolumeX,
+  Clock, Eye, EyeOff, Camera, CameraOff,
+  Copy, Link, UserPlus, Shield, Crown, X
 } from "lucide-react"
-import { MultiUserVideoChat } from "./multi-user-video-chat"
-import { EnhancedScreenSharing } from "./enhanced-screen-sharing"
-import { CollaborativeWhiteboard } from "./collaborative-whiteboard"
-import { EnhancedChat } from "./enhanced-chat"
-import { EnhancedFileSharingV2 } from "./enhanced-file-sharing-v2"
 import { io, type Socket } from "socket.io-client"
 import { toast } from "sonner"
+import { VideoGrid } from "./video-grid"
+import { RealTimeChat } from "./real-time-chat"
+import { FileSharing } from "./file-sharing"
 
 interface Participant {
   id: string
@@ -34,9 +32,10 @@ interface Participant {
   joinedAt: number
   role: 'host' | 'moderator' | 'participant'
   connectionQuality: 'excellent' | 'good' | 'poor'
+  stream?: MediaStream
 }
 
-interface GoogleMeetRoomProps {
+interface VideoCallProps {
   roomId: string
   roomName: string
   roomCode: string
@@ -47,7 +46,7 @@ interface GoogleMeetRoomProps {
   onLeave: () => void
 }
 
-export function GoogleMeetRoomInterface({
+export function VideoCallInterface({
   roomId,
   roomName,
   roomCode,
@@ -56,14 +55,15 @@ export function GoogleMeetRoomInterface({
   userEmail,
   isHost,
   onLeave
-}: GoogleMeetRoomProps) {
+}: VideoCallProps) {
   // Socket and connection
   const [socket, setSocket] = useState<Socket | null>(null)
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   
-  // Participants
+  // Participants and streams
   const [participants, setParticipants] = useState<Participant[]>([])
-  const [currentUser, setCurrentUser] = useState<Participant | null>(null)
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null)
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map())
   
   // Media states
   const [isVideoEnabled, setIsVideoEnabled] = useState(true)
@@ -73,11 +73,10 @@ export function GoogleMeetRoomInterface({
   const [speakerVolume, setSpeakerVolume] = useState(100)
   
   // UI states
-  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'whiteboard' | 'participants'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'files' | 'participants'>('chat')
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showParticipantActions, setShowParticipantActions] = useState<string | null>(null)
   const [videoLayout, setVideoLayout] = useState<'grid' | 'spotlight' | 'sidebar'>('grid')
   
   // Session info
@@ -86,11 +85,22 @@ export function GoogleMeetRoomInterface({
   const [networkQuality, setNetworkQuality] = useState<'excellent' | 'good' | 'poor'>('excellent')
   
   // Refs
+  const localVideoRef = useRef<HTMLVideoElement>(null)
+  const peerConnections = useRef<Map<string, RTCPeerConnection>>(new Map())
   const sessionStartTime = useRef<number>(Date.now())
   const durationInterval = useRef<NodeJS.Timeout>()
 
-  // Initialize socket connection
+  // WebRTC configuration
+  const rtcConfig = {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+    ],
+  }
+
+  // Initialize media and socket
   useEffect(() => {
+    initializeMedia()
     initializeSocket()
     startDurationTimer()
     
@@ -98,6 +108,32 @@ export function GoogleMeetRoomInterface({
       cleanup()
     }
   }, [])
+
+  const initializeMedia = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        },
+        audio: { 
+          echoCancellation: true, 
+          noiseSuppression: true,
+          autoGainControl: true
+        },
+      })
+      
+      setLocalStream(stream)
+      
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream
+      }
+    } catch (error) {
+      console.error("Failed to access media:", error)
+      toast.error("Failed to access camera/microphone")
+    }
+  }
 
   const initializeSocket = () => {
     const socketInstance = io(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000", {
@@ -114,13 +150,15 @@ export function GoogleMeetRoomInterface({
     socketInstance.on("connect", () => {
       setConnectionStatus('connected')
       setNetworkQuality('excellent')
-      toast.success("Connected to room")
+      toast.success("Connected to video call")
       
-      // Join room
-      socketInstance.emit("join-room", {
+      // Join video call room
+      socketInstance.emit("join-video-call", {
         roomId,
         userId,
-        userName
+        userName,
+        userEmail,
+        isHost
       })
     })
 
@@ -132,85 +170,77 @@ export function GoogleMeetRoomInterface({
 
     socketInstance.on("disconnect", () => {
       setConnectionStatus('disconnected')
-      toast.warning("Disconnected from room")
+      toast.warning("Disconnected from video call")
     })
 
-    // Room events
-    socketInstance.on("room-joined", (data) => {
-      const mappedParticipants = data.participants.map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        email: p.email || '',
-        avatar: p.avatar || '',
-        videoEnabled: p.video !== false,
-        audioEnabled: p.audio !== false,
-        isScreenSharing: false,
-        isSpeaking: false,
-        isHandRaised: false,
-        joinedAt: Date.now(),
-        role: p.isHost ? 'host' : 'participant',
-        connectionQuality: 'excellent'
-      }))
-      setParticipants(mappedParticipants)
-      const user = mappedParticipants.find((p: Participant) => p.id === userId)
-      if (user) {
-        setCurrentUser(user)
-      }
-    })
-
-    socketInstance.on("user-joined", (data) => {
-      const participant = {
-        id: data.userId,
-        name: data.userName,
-        email: '',
-        avatar: '',
-        videoEnabled: true,
-        audioEnabled: true,
-        isScreenSharing: false,
-        isSpeaking: false,
-        isHandRaised: false,
-        joinedAt: Date.now(),
-        role: data.isHost ? 'host' : 'participant',
-        connectionQuality: 'excellent'
-      }
-      setParticipants(prev => [...prev.filter(p => p.id !== data.userId), participant])
-      toast.info(`${data.userName} joined`, {
-        description: `${participants.length + 1} people in the room`
-      })
-    })
-
-    socketInstance.on("user-left", (data) => {
-      const participant = participants.find(p => p.id === data.userId)
-      setParticipants(prev => prev.filter(p => p.id !== data.userId))
-      if (participant) {
-        toast.info(`${participant.name} left the room`)
-      }
-    })
-
-    socketInstance.on("user-media-changed", (data) => {
-      setParticipants(prev => prev.map(p => 
-        p.id === data.userId ? { 
-          ...p, 
-          videoEnabled: data.video !== undefined ? data.video : p.videoEnabled,
-          audioEnabled: data.audio !== undefined ? data.audio : p.audioEnabled
-        } : p
-      ))
+    // Video call events
+    socketInstance.on("participant-joined", (participant) => {
+      setParticipants(prev => [...prev.filter(p => p.id !== participant.id), participant])
+      toast.info(`${participant.name} joined the call`)
       
-      if (data.userId === userId) {
-        setCurrentUser(prev => prev ? { 
-          ...prev, 
-          videoEnabled: data.video !== undefined ? data.video : prev.videoEnabled,
-          audioEnabled: data.audio !== undefined ? data.audio : prev.audioEnabled
-        } : null)
+      // Create peer connection for new participant
+      if (participant.id !== userId) {
+        createPeerConnection(participant.id, true)
       }
     })
 
-    socketInstance.on("hand-raised", ({ participantId, participantName }) => {
-      if (participantId !== userId) {
-        toast.info(`${participantName} raised their hand`)
+    socketInstance.on("participant-left", (participantId) => {
+      const participant = participants.find(p => p.id === participantId)
+      setParticipants(prev => prev.filter(p => p.id !== participantId))
+      
+      // Clean up peer connection
+      const peerConnection = peerConnections.current.get(participantId)
+      if (peerConnection) {
+        peerConnection.close()
+        peerConnections.current.delete(participantId)
+      }
+      
+      // Remove remote stream
+      setRemoteStreams(prev => {
+        const newStreams = new Map(prev)
+        newStreams.delete(participantId)
+        return newStreams
+      })
+      
+      if (participant) {
+        toast.info(`${participant.name} left the call`)
       }
     })
 
+    socketInstance.on("participant-updated", (updatedParticipant) => {
+      setParticipants(prev => prev.map(p => 
+        p.id === updatedParticipant.id ? { ...p, ...updatedParticipant } : p
+      ))
+    })
+
+    // WebRTC signaling
+    socketInstance.on("webrtc-offer", async ({ offer, from }) => {
+      await handleOffer(offer, from)
+    })
+
+    socketInstance.on("webrtc-answer", async ({ answer, from }) => {
+      await handleAnswer(answer, from)
+    })
+
+    socketInstance.on("webrtc-ice-candidate", async ({ candidate, from }) => {
+      await handleIceCandidate(candidate, from)
+    })
+
+    // Screen sharing events
+    socketInstance.on("screen-share-started", ({ participantId, participantName }) => {
+      setParticipants(prev => prev.map(p => 
+        p.id === participantId ? { ...p, isScreenSharing: true } : p
+      ))
+      toast.info(`${participantName} started screen sharing`)
+    })
+
+    socketInstance.on("screen-share-stopped", ({ participantId }) => {
+      setParticipants(prev => prev.map(p => 
+        p.id === participantId ? { ...p, isScreenSharing: false } : p
+      ))
+    })
+
+    // Recording events
     socketInstance.on("recording-started", ({ startedBy }) => {
       setRecordingStatus('recording')
       toast.success(`Recording started by ${startedBy}`)
@@ -222,6 +252,121 @@ export function GoogleMeetRoomInterface({
     })
   }
 
+  const createPeerConnection = async (remoteUserId: string, isInitiator: boolean) => {
+    const peerConnection = new RTCPeerConnection(rtcConfig)
+    peerConnections.current.set(remoteUserId, peerConnection)
+
+    // Add local stream tracks
+    if (localStream) {
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream)
+      })
+    }
+
+    // Handle remote stream
+    peerConnection.ontrack = (event) => {
+      const [remoteStream] = event.streams
+      setRemoteStreams(prev => new Map(prev.set(remoteUserId, remoteStream)))
+      
+      // Update participant with stream
+      setParticipants(prev => prev.map(p => 
+        p.id === remoteUserId ? { ...p, stream: remoteStream } : p
+      ))
+    }
+
+    // Handle ICE candidates
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate && socket) {
+        socket.emit("webrtc-ice-candidate", {
+          roomId,
+          candidate: event.candidate,
+          from: userId,
+          to: remoteUserId
+        })
+      }
+    }
+
+    // Handle connection state changes
+    peerConnection.onconnectionstatechange = () => {
+      const state = peerConnection.connectionState
+      console.log(`Peer connection with ${remoteUserId}: ${state}`)
+      
+      if (state === 'connected') {
+        setParticipants(prev => prev.map(p => 
+          p.id === remoteUserId ? { ...p, connectionQuality: 'excellent' } : p
+        ))
+      } else if (state === 'disconnected' || state === 'failed') {
+        setParticipants(prev => prev.map(p => 
+          p.id === remoteUserId ? { ...p, connectionQuality: 'poor' } : p
+        ))
+      }
+    }
+
+    // Create offer if initiator
+    if (isInitiator) {
+      try {
+        const offer = await peerConnection.createOffer()
+        await peerConnection.setLocalDescription(offer)
+        
+        socket?.emit("webrtc-offer", {
+          roomId,
+          offer,
+          from: userId,
+          to: remoteUserId
+        })
+      } catch (error) {
+        console.error("Error creating offer:", error)
+      }
+    }
+
+    return peerConnection
+  }
+
+  const handleOffer = async (offer: RTCSessionDescriptionInit, fromUserId: string) => {
+    try {
+      let peerConnection = peerConnections.current.get(fromUserId)
+      
+      if (!peerConnection) {
+        peerConnection = await createPeerConnection(fromUserId, false)
+      }
+
+      await peerConnection.setRemoteDescription(offer)
+      const answer = await peerConnection.createAnswer()
+      await peerConnection.setLocalDescription(answer)
+
+      socket?.emit("webrtc-answer", {
+        roomId,
+        answer,
+        from: userId,
+        to: fromUserId
+      })
+    } catch (error) {
+      console.error("Error handling offer:", error)
+    }
+  }
+
+  const handleAnswer = async (answer: RTCSessionDescriptionInit, fromUserId: string) => {
+    try {
+      const peerConnection = peerConnections.current.get(fromUserId)
+      if (peerConnection) {
+        await peerConnection.setRemoteDescription(answer)
+      }
+    } catch (error) {
+      console.error("Error handling answer:", error)
+    }
+  }
+
+  const handleIceCandidate = async (candidate: RTCIceCandidateInit, fromUserId: string) => {
+    try {
+      const peerConnection = peerConnections.current.get(fromUserId)
+      if (peerConnection) {
+        await peerConnection.addIceCandidate(candidate)
+      }
+    } catch (error) {
+      console.error("Error handling ICE candidate:", error)
+    }
+  }
+
   const startDurationTimer = () => {
     durationInterval.current = setInterval(() => {
       setSessionDuration(Math.floor((Date.now() - sessionStartTime.current) / 1000))
@@ -229,43 +374,67 @@ export function GoogleMeetRoomInterface({
   }
 
   const cleanup = () => {
+    // Close all peer connections
+    peerConnections.current.forEach(pc => pc.close())
+    peerConnections.current.clear()
+    
+    // Stop local stream
+    if (localStream) {
+      localStream.getTracks().forEach(track => track.stop())
+    }
+    
+    // Disconnect socket
     if (socket) {
-      socket.emit("leave-room", { roomId, userId })
+      socket.emit("leave-video-call", { roomId, userId })
       socket.disconnect()
     }
+    
+    // Clear timer
     if (durationInterval.current) {
       clearInterval(durationInterval.current)
     }
   }
 
   // Media controls
-  const toggleVideo = () => {
-    const newState = !isVideoEnabled
-    setIsVideoEnabled(newState)
-    
-    socket?.emit("toggle-video", {
-      roomId,
-      userId,
-      video: newState
-    })
-    
-    toast.success(newState ? "Camera on" : "Camera off")
-  }
+  const toggleVideo = useCallback(() => {
+    if (localStream) {
+      const videoTrack = localStream.getVideoTracks()[0]
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled
+        setIsVideoEnabled(videoTrack.enabled)
+        
+        socket?.emit("update-media", {
+          roomId,
+          userId,
+          type: 'video',
+          enabled: videoTrack.enabled
+        })
+        
+        toast.success(videoTrack.enabled ? "Camera on" : "Camera off")
+      }
+    }
+  }, [localStream, socket, roomId, userId])
 
-  const toggleAudio = () => {
-    const newState = !isAudioEnabled
-    setIsAudioEnabled(newState)
-    
-    socket?.emit("toggle-audio", {
-      roomId,
-      userId,
-      audio: newState
-    })
-    
-    toast.success(newState ? "Mic on" : "Mic off")
-  }
+  const toggleAudio = useCallback(() => {
+    if (localStream) {
+      const audioTrack = localStream.getAudioTracks()[0]
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled
+        setIsAudioEnabled(audioTrack.enabled)
+        
+        socket?.emit("update-media", {
+          roomId,
+          userId,
+          type: 'audio',
+          enabled: audioTrack.enabled
+        })
+        
+        toast.success(audioTrack.enabled ? "Mic on" : "Mic off")
+      }
+    }
+  }, [localStream, socket, roomId, userId])
 
-  const toggleHandRaise = () => {
+  const toggleHandRaise = useCallback(() => {
     const newState = !isHandRaised
     setIsHandRaised(newState)
     
@@ -277,96 +446,103 @@ export function GoogleMeetRoomInterface({
     })
     
     toast.success(newState ? "Hand raised" : "Hand lowered")
-  }
+  }, [isHandRaised, socket, roomId, userId, userName])
 
-  const startScreenShare = () => {
-    setIsScreenSharing(true)
-    socket?.emit("start-screen-share", {
-      roomId,
-      userId,
-      userName
-    })
-  }
-
-  const stopScreenShare = () => {
-    setIsScreenSharing(false)
-    socket?.emit("stop-screen-share", {
-      roomId,
-      userId
-    })
-  }
-
-  const startRecording = () => {
-    if (!isHost) {
-      toast.error("Only hosts can start recording")
-      return
+  const startScreenShare = useCallback(async () => {
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { mediaSource: 'screen' },
+        audio: true
+      })
+      
+      setIsScreenSharing(true)
+      
+      // Replace video track in all peer connections
+      const videoTrack = screenStream.getVideoTracks()[0]
+      peerConnections.current.forEach(peerConnection => {
+        const sender = peerConnection.getSenders().find(s => 
+          s.track && s.track.kind === 'video'
+        )
+        if (sender) {
+          sender.replaceTrack(videoTrack)
+        }
+      })
+      
+      // Update local video
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = screenStream
+      }
+      
+      socket?.emit("screen-share-started", {
+        roomId,
+        userId,
+        userName
+      })
+      
+      // Handle screen share end
+      videoTrack.onended = () => {
+        stopScreenShare()
+      }
+      
+      toast.success("Screen sharing started")
+    } catch (error) {
+      console.error("Error starting screen share:", error)
+      toast.error("Failed to start screen sharing")
     }
-    
-    socket?.emit("start-recording", {
-      roomId,
-      userId,
-      userName
-    })
-  }
+  }, [socket, roomId, userId, userName])
 
-  const stopRecording = () => {
-    if (!isHost) {
-      toast.error("Only hosts can stop recording")
-      return
+  const stopScreenShare = useCallback(async () => {
+    try {
+      // Get camera stream back
+      const cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { 
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      })
+      
+      const videoTrack = cameraStream.getVideoTracks()[0]
+      
+      // Replace screen share track with camera track
+      peerConnections.current.forEach(peerConnection => {
+        const sender = peerConnection.getSenders().find(s => 
+          s.track && s.track.kind === 'video'
+        )
+        if (sender) {
+          sender.replaceTrack(videoTrack)
+        }
+      })
+      
+      // Update local stream
+      if (localStream) {
+        const audioTrack = localStream.getAudioTracks()[0]
+        const newStream = new MediaStream([videoTrack, audioTrack])
+        setLocalStream(newStream)
+        
+        if (localVideoRef.current) {
+          localVideoRef.current.srcObject = newStream
+        }
+      }
+      
+      setIsScreenSharing(false)
+      
+      socket?.emit("screen-share-stopped", {
+        roomId,
+        userId
+      })
+      
+      toast.success("Screen sharing stopped")
+    } catch (error) {
+      console.error("Error stopping screen share:", error)
+      toast.error("Failed to stop screen sharing")
     }
-    
-    socket?.emit("stop-recording", {
-      roomId,
-      userId
-    })
-  }
+  }, [localStream, socket, roomId, userId])
 
   const inviteParticipants = () => {
-    const inviteLink = `${window.location.origin}/join?code=${roomCode}`
+    const inviteLink = `${window.location.origin}/video-call/join?code=${roomCode}`
     navigator.clipboard.writeText(inviteLink)
     toast.success("Invite link copied to clipboard")
-  }
-
-  const muteParticipant = (participantId: string) => {
-    if (!isHost) {
-      toast.error("Only hosts can mute participants")
-      return
-    }
-    
-    socket?.emit("mute-participant", {
-      roomId,
-      participantId,
-      mutedBy: userId
-    })
-  }
-
-  const removeParticipant = (participantId: string) => {
-    if (!isHost) {
-      toast.error("Only hosts can remove participants")
-      return
-    }
-    
-    const participant = participants.find(p => p.id === participantId)
-    if (participant && confirm(`Remove ${participant.name} from the room?`)) {
-      socket?.emit("remove-participant", {
-        roomId,
-        participantId,
-        removedBy: userId
-      })
-    }
-  }
-
-  const makeHost = (participantId: string) => {
-    if (!isHost) {
-      toast.error("Only hosts can assign host privileges")
-      return
-    }
-    
-    socket?.emit("make-host", {
-      roomId,
-      participantId,
-      assignedBy: userId
-    })
   }
 
   const formatDuration = (seconds: number) => {
@@ -382,9 +558,9 @@ export function GoogleMeetRoomInterface({
 
   const getConnectionIcon = () => {
     switch (networkQuality) {
-      case 'excellent': return <Wifi className="w-4 h-4 text-green-500" />
-      case 'good': return <Wifi className="w-4 h-4 text-yellow-500" />
-      case 'poor': return <WifiOff className="w-4 h-4 text-red-500" />
+      case 'excellent': return <div className="w-2 h-2 bg-green-500 rounded-full" />
+      case 'good': return <div className="w-2 h-2 bg-yellow-500 rounded-full" />
+      case 'poor': return <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
     }
   }
 
@@ -396,10 +572,7 @@ export function GoogleMeetRoomInterface({
           {/* Room Info */}
           <div className="flex items-center space-x-3">
             <div className="flex items-center space-x-2">
-              <div className={`w-3 h-3 rounded-full ${
-                connectionStatus === 'connected' ? 'bg-green-500' : 
-                connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
-              }`} />
+              {getConnectionIcon()}
               <span className="text-white font-semibold text-lg">{roomName}</span>
             </div>
             
@@ -426,11 +599,6 @@ export function GoogleMeetRoomInterface({
               <Users className="w-4 h-4" />
               <span>{participants.length}</span>
             </div>
-            
-            <div className="flex items-center space-x-1">
-              {getConnectionIcon()}
-              <span className="capitalize">{networkQuality}</span>
-            </div>
           </div>
         </div>
 
@@ -446,20 +614,6 @@ export function GoogleMeetRoomInterface({
             Invite
           </Button>
           
-          {isHost && (
-            <Button
-              onClick={recordingStatus === 'idle' ? startRecording : stopRecording}
-              variant={recordingStatus === 'recording' ? "destructive" : "outline"}
-              size="sm"
-              className={recordingStatus === 'recording' ? "" : "text-gray-300 border-gray-600 hover:bg-gray-700"}
-            >
-              <div className={`w-3 h-3 rounded-full mr-2 ${
-                recordingStatus === 'recording' ? 'bg-white animate-pulse' : 'bg-red-500'
-              }`} />
-              {recordingStatus === 'recording' ? 'Stop Recording' : 'Record'}
-            </Button>
-          )}
-          
           <Button
             onClick={() => setSidebarVisible(!sidebarVisible)}
             variant="ghost"
@@ -468,15 +622,6 @@ export function GoogleMeetRoomInterface({
           >
             {sidebarVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </Button>
-          
-          <Button
-            onClick={() => setShowSettings(!showSettings)}
-            variant="ghost"
-            size="sm"
-            className="text-gray-300 hover:text-white"
-          >
-            <Settings className="w-4 h-4" />
-          </Button>
         </div>
       </div>
 
@@ -484,11 +629,13 @@ export function GoogleMeetRoomInterface({
       <div className="flex-1 flex overflow-hidden">
         {/* Video Area */}
         <div className="flex-1 relative bg-black">
-          <MultiUserVideoChat
-            roomId={roomId}
-            userId={userId}
-            userName={userName}
-            onLeave={onLeave}
+          <VideoGrid
+            participants={participants}
+            localStream={localStream}
+            remoteStreams={remoteStreams}
+            localVideoRef={localVideoRef}
+            currentUserId={userId}
+            layout={videoLayout}
           />
           
           {/* Floating Control Bar */}
@@ -542,15 +689,6 @@ export function GoogleMeetRoomInterface({
                 <Hand className={`w-6 h-6 ${isHandRaised ? 'text-yellow-400' : 'text-white'}`} />
               </Button>
               
-              {/* More Options */}
-              <Button
-                variant="ghost"
-                size="lg"
-                className="rounded-full w-14 h-14 p-0 hover:scale-105 transition-transform"
-              >
-                <MoreVertical className="w-6 h-6 text-white" />
-              </Button>
-              
               {/* Divider */}
               <div className="w-px h-8 bg-gray-600 mx-2" />
               
@@ -571,7 +709,7 @@ export function GoogleMeetRoomInterface({
         {sidebarVisible && (
           <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="flex-1 flex flex-col">
-              <TabsList className="grid w-full grid-cols-4 bg-gray-700 m-3 rounded-lg">
+              <TabsList className="grid w-full grid-cols-3 bg-gray-700 m-3 rounded-lg">
                 <TabsTrigger value="chat" className="text-xs rounded-md">
                   <MessageSquare className="w-4 h-4 mr-1" />
                   Chat
@@ -584,17 +722,14 @@ export function GoogleMeetRoomInterface({
                   <FileText className="w-4 h-4 mr-1" />
                   Files
                 </TabsTrigger>
-                <TabsTrigger value="whiteboard" className="text-xs rounded-md">
-                  <Palette className="w-4 h-4 mr-1" />
-                  Board
-                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="chat" className="flex-1 m-0">
-                <EnhancedChat
+                <RealTimeChat
                   roomId={roomId}
                   userId={userId}
                   userName={userName}
+                  socket={socket}
                 />
               </TabsContent>
 
@@ -602,7 +737,7 @@ export function GoogleMeetRoomInterface({
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h3 className="text-white font-semibold">
-                      In this meeting ({participants.length})
+                      In this call ({participants.length})
                     </h3>
                     {isHost && (
                       <Button
@@ -618,7 +753,7 @@ export function GoogleMeetRoomInterface({
                   
                   <div className="space-y-2">
                     {participants.map((participant) => (
-                      <div key={participant.id} className="group flex items-center justify-between p-3 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors">
+                      <div key={participant.id} className="flex items-center justify-between p-3 bg-gray-700 rounded-lg">
                         <div className="flex items-center space-x-3">
                           <div className="relative">
                             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
@@ -639,73 +774,25 @@ export function GoogleMeetRoomInterface({
                               {participant.role === 'host' && (
                                 <Crown className="w-4 h-4 text-yellow-500" />
                               )}
-                              {participant.role === 'moderator' && (
-                                <Shield className="w-4 h-4 text-blue-500" />
-                              )}
                             </div>
                             <div className="text-gray-300 text-xs">
-                              {participant.role === 'host' ? 'Host' : 
-                               participant.role === 'moderator' ? 'Moderator' : 'Participant'}
+                              {participant.role === 'host' ? 'Host' : 'Participant'}
                             </div>
                           </div>
                         </div>
                         
-                        <div className="flex items-center space-x-2">
-                          {/* Status indicators */}
-                          <div className="flex items-center space-x-1">
-                            {participant.isHandRaised && (
-                              <Hand key="hand" className="w-4 h-4 text-yellow-500" />
-                            )}
-                            {participant.isScreenSharing && (
-                              <Monitor key="screen" className="w-4 h-4 text-green-500" />
-                            )}
-                            {!participant.audioEnabled && (
-                              <MicOff key="mic" className="w-4 h-4 text-red-500" />
-                            )}
-                            {!participant.videoEnabled && (
-                              <VideoOff key="video" className="w-4 h-4 text-red-500" />
-                            )}
-                          </div>
-                          
-                          {/* Host actions */}
-                          {isHost && participant.id !== userId && (
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Button
-                                onClick={() => setShowParticipantActions(
-                                  showParticipantActions === participant.id ? null : participant.id
-                                )}
-                                variant="ghost"
-                                size="sm"
-                                className="p-1"
-                              >
-                                <MoreVertical className="w-4 h-4 text-gray-300" />
-                              </Button>
-                              
-                              {showParticipantActions === participant.id && (
-                                <div className="absolute right-4 mt-2 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-10 min-w-[150px]">
-                                  <div className="py-1">
-                                    <button
-                                      onClick={() => muteParticipant(participant.id)}
-                                      className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-gray-700"
-                                    >
-                                      Mute
-                                    </button>
-                                    <button
-                                      onClick={() => makeHost(participant.id)}
-                                      className="w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-gray-700"
-                                    >
-                                      Make host
-                                    </button>
-                                    <button
-                                      onClick={() => removeParticipant(participant.id)}
-                                      className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-gray-700"
-                                    >
-                                      Remove
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
+                        <div className="flex items-center space-x-1">
+                          {participant.isHandRaised && (
+                            <Hand key="hand" className="w-4 h-4 text-yellow-500" />
+                          )}
+                          {participant.isScreenSharing && (
+                            <Monitor key="screen" className="w-4 h-4 text-green-500" />
+                          )}
+                          {!participant.audioEnabled && (
+                            <MicOff key="mic" className="w-4 h-4 text-red-500" />
+                          )}
+                          {!participant.videoEnabled && (
+                            <VideoOff key="video" className="w-4 h-4 text-red-500" />
                           )}
                         </div>
                       </div>
@@ -715,53 +802,17 @@ export function GoogleMeetRoomInterface({
               </TabsContent>
 
               <TabsContent value="files" className="flex-1 m-0">
-                <EnhancedFileSharingV2
-                  socket={socket}
+                <FileSharing
                   roomId={roomId}
                   userId={userId}
                   userName={userName}
-                  isHost={isHost}
-                />
-              </TabsContent>
-
-              <TabsContent value="whiteboard" className="flex-1 m-0">
-                <CollaborativeWhiteboard
                   socket={socket}
-                  roomId={roomId}
-                  userId={userId}
-                  userName={userName}
                 />
               </TabsContent>
             </Tabs>
           </div>
         )}
       </div>
-
-      {/* Screen Share Overlay */}
-      {isScreenSharing && (
-        <div className="absolute inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
-          <div className="w-full h-full max-w-7xl max-h-5xl p-4">
-            <EnhancedScreenSharing
-              socket={socket}
-              roomId={roomId}
-              userId={userId}
-              userName={userName}
-              isHost={isHost}
-              onScreenShareStart={() => setIsScreenSharing(true)}
-              onScreenShareStop={() => setIsScreenSharing(false)}
-            />
-          </div>
-          
-          <Button
-            onClick={() => setIsScreenSharing(false)}
-            variant="outline"
-            className="absolute top-6 right-6 bg-gray-800 border-gray-600 text-white hover:bg-gray-700"
-          >
-            <X className="w-4 h-4 mr-2" />
-            Close
-          </Button>
-        </div>
-      )}
     </div>
   )
 }

@@ -84,8 +84,8 @@ export function VideoChat({ roomId, userId, userName, onLeave }: VideoChatProps)
 
   const initializeSocket = () => {
     const socketInstance = io(process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000", {
-      path: "/api/socketio",
-      transports: ["websocket", "polling"],
+      path: "/socket.io/",
+      transports: ["polling", "websocket"],
     })
 
     setSocket(socketInstance)

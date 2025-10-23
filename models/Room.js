@@ -40,8 +40,7 @@ const roomSchema = new mongoose.Schema({
   lastActivity: { type: Date, default: Date.now }
 });
 
-// Index for efficient queries
-roomSchema.index({ roomCode: 1 });
+// Index for efficient queries (roomCode already has unique index)
 roomSchema.index({ createdBy: 1 });
 roomSchema.index({ isActive: 1 });
 

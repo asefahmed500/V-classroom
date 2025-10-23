@@ -78,12 +78,7 @@ const nextConfig = {
 
   // Redirects and rewrites
   async rewrites() {
-    return [
-      {
-        source: "/socket.io/:path*",
-        destination: "/api/socketio/:path*",
-      },
-    ]
+    return []
   },
 }
 

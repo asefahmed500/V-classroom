@@ -1,427 +1,398 @@
 "use client"
 
-import { useSession, signOut } from "next-auth/react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import {
-  Video,
-  Users,
-  Clock,
-  Brain,
-  BookOpen,
-  Trophy,
-  Calendar,
-  Plus,
-  ArrowRight,
-  Star,
-  TrendingUp,
-  Target,
-  Zap,
-  Play,
-  Settings,
-  LogOut,
-  Eye,
-  Trash2,
-  Lock,
-  Globe
+import { 
+  Video, Plus, Users, Clock, 
+  Calendar, Settings, History,
+  ArrowRight, Copy, ExternalLink
 } from "lucide-react"
-import Link from "next/link"
+import { toast } from "sonner"
+
+interface RecentCall {
+  roomId: string
+  roomName: string
+  roomCode: string
+  hostName: string
+  participantCount: number
+  startedAt: string
+  duration: number
+  isHost: boolean
+}
 
 export default function DashboardPage() {
-  const { data: session, status } = useSession()
   const router = useRouter()
-  const [stats, setStats] = useState({
-    studySessions: 0,
-    totalStudyTime: 0,
-    achievements: 0,
-    currentStreak: 0
-  })
+  const { data: session } = useSession()
+  
+  const [recentCalls, setRecentCalls] = useState<RecentCall[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/auth/signin")
+    if (session?.user) {
+      loadRecentCalls()
     }
-  }, [status, router])
+  }, [session])
 
-  useEffect(() => {
-    const loadUserStats = async () => {
-      if (!session?.user?.id) return
-      
-      try {
-        const response = await fetch('/api/user/stats')
-        if (response.ok) {
-          const data = await response.json()
-          setStats(data.stats)
-        }
-      } catch (error) {
-        console.error('Failed to load user stats:', error)
+  const loadRecentCalls = async () => {
+    try {
+      const response = await fetch('/api/video-calls/recent')
+      if (response.ok) {
+        const data = await response.json()
+        setRecentCalls(data.calls || [])
       }
+    } catch (error) {
+      console.error("Error loading recent calls:", error)
+    } finally {
+      setLoading(false)
     }
+  }
 
-    loadUserStats()
-  }, [session?.user?.id])
+  const handleQuickStart = async () => {
+    try {
+      const response = await fetch('/api/video-calls/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          roomName: `${session?.user?.name || 'User'}'s Quick Meeting`,
+          maxParticipants: 25,
+          settings: {
+            allowScreenShare: true,
+            allowFileShare: true,
+            allowChat: true,
+            requireApproval: false,
+            recordingEnabled: false
+          }
+        })
+      })
 
-  if (status === "loading") {
+      if (response.ok) {
+        const data = await response.json()
+        toast.success("Meeting started!")
+        router.push(`/video-call/${data.videoCall.roomId}`)
+      } else {
+        toast.error("Failed to start meeting")
+      }
+    } catch (error) {
+      console.error("Error starting quick meeting:", error)
+      toast.error("Failed to start meeting")
+    }
+  }
+
+  const copyInviteLink = (roomCode: string) => {
+    const inviteLink = `${window.location.origin}/video-call/join?code=${roomCode}`
+    navigator.clipboard.writeText(inviteLink)
+    toast.success("Invite link copied to clipboard")
+  }
+
+  const formatDuration = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`
+    }
+    return `${minutes}m`
+  }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    
+    if (diffDays === 0) return "Today"
+    if (diffDays === 1) return "Yesterday"
+    if (diffDays < 7) return `${diffDays} days ago`
+    
+    return date.toLocaleDateString()
+  }
+
+  if (!session?.user) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full animate-pulse mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading your dashboard...</p>
-        </div>
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <Card className="w-full max-w-md bg-gray-800 border-gray-700">
+          <CardHeader className="text-center">
+            <Video className="w-12 h-12 text-blue-500 mx-auto mb-4" />
+            <CardTitle className="text-white">Welcome to Video Calls</CardTitle>
+            <CardDescription className="text-gray-400">
+              Please sign in to access your dashboard
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button 
+              onClick={() => router.push('/auth/signin')}
+              className="w-full bg-blue-600 hover:bg-blue-700"
+            >
+              Sign In
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
-  if (!session) {
-    return null
-  }
-
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map(n => n[0])
-      .join("")
-      .toUpperCase()
-  }
-
-  // Remove fake data - these will be replaced with real data from API calls
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
-      {/* Header */}
-      <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-50">
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-4">
+    <div className="min-h-screen bg-gray-900 py-8">
+      <div className="max-w-7xl mx-auto px-4">
+        {/* Header */}
+        <div className="mb-8">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="w-10 h-10 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-                <Users className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-                <p className="text-sm text-gray-600">Welcome back, {session.user?.name}!</p>
-              </div>
+            <div>
+              <h1 className="text-3xl font-bold text-white mb-2">
+                Welcome back, {session.user.name}!
+              </h1>
+              <p className="text-gray-400">
+                Start a new video call or join an existing one
+              </p>
             </div>
             
             <div className="flex items-center space-x-4">
-              <Button 
-                variant="destructive" 
-                size="sm"
-                onClick={() => signOut({ callbackUrl: "/" })}
-                className="bg-red-600 hover:bg-red-700"
+              <Button
+                onClick={() => router.push('/video-call/join')}
+                variant="outline"
+                className="text-gray-300 border-gray-600 hover:bg-gray-700"
               >
-                <LogOut className="w-4 h-4 mr-2" />
-                Logout
+                Join Call
               </Button>
-              <Link href="/profile">
-                <Avatar className="h-10 w-10 cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all">
-                  <AvatarFallback className="bg-gradient-to-r from-blue-600 to-purple-600 text-white">
-                    {getInitials(session.user?.name || "User")}
-                  </AvatarFallback>
-                </Avatar>
-              </Link>
+              <Button
+                onClick={() => router.push('/video-call/create')}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                New Meeting
+              </Button>
             </div>
           </div>
         </div>
-      </header>
 
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Quick Actions */}
-        <div className="mb-8">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <Link href="/rooms/create" className="flex-1">
-              <Button className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white py-6 text-lg font-semibold shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-200 group">
-                <Plus className="w-6 h-6 mr-3 group-hover:scale-110 transition-transform" />
-                Create Study Room
-                <ArrowRight className="w-5 h-5 ml-3 group-hover:translate-x-1 transition-transform" />
-              </Button>
-            </Link>
-            <Link href="/rooms/join" className="flex-1">
-              <Button variant="outline" className="w-full py-6 text-lg font-semibold border-2 border-gray-300 hover:border-blue-300 hover:bg-blue-50 group">
-                <Users className="w-6 h-6 mr-3 group-hover:scale-110 transition-transform" />
-                Join Study Room
-              </Button>
-            </Link>
-          </div>
-        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Quick Actions */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Quick Start */}
+            <Card className="bg-gray-800 border-gray-700">
+              <CardHeader>
+                <CardTitle className="text-white flex items-center">
+                  <Video className="w-5 h-5 mr-2 text-blue-500" />
+                  Quick Actions
+                </CardTitle>
+                <CardDescription className="text-gray-400">
+                  Start or join a meeting instantly
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Button
+                    onClick={handleQuickStart}
+                    className="bg-blue-600 hover:bg-blue-700 h-20 text-lg"
+                  >
+                    <div className="text-center">
+                      <Video className="w-8 h-8 mx-auto mb-2" />
+                      Start Instant Meeting
+                    </div>
+                  </Button>
+                  
+                  <Button
+                    onClick={() => router.push('/video-call/join')}
+                    variant="outline"
+                    className="border-gray-600 text-gray-300 hover:bg-gray-700 h-20 text-lg"
+                  >
+                    <div className="text-center">
+                      <Users className="w-8 h-8 mx-auto mb-2" />
+                      Join with Code
+                    </div>
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-blue-600 text-sm font-medium">Study Sessions</p>
-                  <p className="text-3xl font-bold text-blue-900">{stats.studySessions}</p>
-                </div>
-                <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <Video className="w-6 h-6 text-white" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-green-600 text-sm font-medium">Study Time</p>
-                  <p className="text-3xl font-bold text-green-900">{stats.totalStudyTime}h</p>
-                </div>
-                <div className="w-12 h-12 bg-green-600 rounded-lg flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-white" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-purple-600 text-sm font-medium">Achievements</p>
-                  <p className="text-3xl font-bold text-purple-900">{stats.achievements}</p>
-                </div>
-                <div className="w-12 h-12 bg-purple-600 rounded-lg flex items-center justify-center">
-                  <Trophy className="w-6 h-6 text-white" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-orange-600 text-sm font-medium">Current Streak</p>
-                  <p className="text-3xl font-bold text-orange-900">{stats.currentStreak} days</p>
-                </div>
-                <div className="w-12 h-12 bg-orange-600 rounded-lg flex items-center justify-center">
-                  <Target className="w-6 h-6 text-white" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-8">
-          {/* My Rooms */}
-          <div className="lg:col-span-2">
-            <Card className="shadow-xl border-0">
+            {/* Recent Calls */}
+            <Card className="bg-gray-800 border-gray-700">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="text-xl font-bold text-gray-900">My Study Rooms</CardTitle>
-                    <CardDescription>Rooms you've created and manage</CardDescription>
+                    <CardTitle className="text-white flex items-center">
+                      <History className="w-5 h-5 mr-2 text-gray-400" />
+                      Recent Calls
+                    </CardTitle>
+                    <CardDescription className="text-gray-400">
+                      Your recent video call history
+                    </CardDescription>
                   </div>
-                  <Link href="/rooms/create">
-                    <Button size="sm" className="bg-green-600 hover:bg-green-700">
-                      <Plus className="w-3 h-3 mr-1" />
-                      Create Room
-                    </Button>
-                  </Link>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-gray-400 hover:text-white"
+                  >
+                    View All
+                  </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                <MyRoomsList userId={session?.user?.id || ''} />
+                {loading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3].map((i) => (
+                      <div key={i} className="animate-pulse">
+                        <div className="h-16 bg-gray-700 rounded-lg"></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : recentCalls.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <Video className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No recent calls</p>
+                    <p className="text-sm">Start your first video call to see it here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {recentCalls.slice(0, 5).map((call) => (
+                      <div key={call.roomId} className="flex items-center justify-between p-4 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors">
+                        <div className="flex items-center space-x-4">
+                          <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
+                            <Video className="w-6 h-6 text-white" />
+                          </div>
+                          
+                          <div>
+                            <div className="flex items-center space-x-2">
+                              <h3 className="text-white font-medium">{call.roomName}</h3>
+                              {call.isHost && (
+                                <Badge variant="outline" className="text-xs">
+                                  Host
+                                </Badge>
+                              )}
+                            </div>
+                            
+                            <div className="flex items-center space-x-4 text-sm text-gray-400">
+                              <div className="flex items-center space-x-1">
+                                <Users className="w-3 h-3" />
+                                <span>{call.participantCount} participants</span>
+                              </div>
+                              
+                              <div className="flex items-center space-x-1">
+                                <Clock className="w-3 h-3" />
+                                <span>{formatDuration(call.duration)}</span>
+                              </div>
+                              
+                              <div className="flex items-center space-x-1">
+                                <Calendar className="w-3 h-3" />
+                                <span>{formatDate(call.startedAt)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <Button
+                            onClick={() => copyInviteLink(call.roomCode)}
+                            variant="ghost"
+                            size="sm"
+                            className="text-gray-400 hover:text-white"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </Button>
+                          
+                          <Button
+                            onClick={() => router.push(`/video-call/${call.roomId}`)}
+                            variant="ghost"
+                            size="sm"
+                            className="text-gray-400 hover:text-white"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
 
           {/* Sidebar */}
           <div className="space-y-6">
-            {/* Quick Actions */}
-            <Card className="shadow-xl border-0">
+            {/* Features */}
+            <Card className="bg-gray-800 border-gray-700">
               <CardHeader>
-                <CardTitle className="text-lg font-bold text-gray-900 flex items-center">
-                  <Zap className="w-5 h-5 mr-2 text-blue-600" />
-                  Quick Actions
-                </CardTitle>
+                <CardTitle className="text-white">Features</CardTitle>
+                <CardDescription className="text-gray-400">
+                  What you can do with our video calls
+                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-3">
-                <Link href="/rooms/join">
-                  <Button className="w-full bg-blue-600 hover:bg-blue-700">
-                    <Users className="w-4 h-4 mr-2" />
-                    Join Study Room
-                  </Button>
-                </Link>
-                
-                <Link href="/rooms">
-                  <Button variant="outline" className="w-full">
-                    <BookOpen className="w-4 h-4 mr-2" />
-                    Browse All Rooms
-                  </Button>
-                </Link>
-                
-                <Link href="/test-systems">
-                  <Button variant="outline" className="w-full">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    Test Systems
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-
-            {/* AI Study Assistant */}
-            <Card className="shadow-xl border-0 bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200">
-              <CardHeader>
-                <CardTitle className="text-lg font-bold text-gray-900 flex items-center">
-                  <Brain className="w-5 h-5 mr-2 text-purple-600" />
-                  AI Study Assistant
-                </CardTitle>
-                <CardDescription>Get personalized study recommendations</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="p-3 bg-white rounded-lg border border-purple-200">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <Star className="w-4 h-4 text-yellow-500" />
-                      <span className="text-sm font-medium text-gray-900">Today's Focus</span>
-                    </div>
-                    <p className="text-sm text-gray-600">Review calculus derivatives for tomorrow's exam</p>
+              <CardContent className="space-y-4">
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                    <Video className="w-4 h-4 text-white" />
                   </div>
-                  
-                  <div className="p-3 bg-white rounded-lg border border-purple-200">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <Zap className="w-4 h-4 text-blue-500" />
-                      <span className="text-sm font-medium text-gray-900">Quick Practice</span>
-                    </div>
-                    <p className="text-sm text-gray-600">5 chemistry problems available</p>
+                  <div>
+                    <div className="text-white font-medium">HD Video Calls</div>
+                    <div className="text-gray-400 text-sm">Up to 50 participants</div>
                   </div>
                 </div>
                 
-                <Link href="/ai-assistant">
-                  <Button className="w-full mt-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700">
-                    <Brain className="w-4 h-4 mr-2" />
-                    Open AI Assistant
-                  </Button>
-                </Link>
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
+                    <Users className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <div className="text-white font-medium">Real-time Chat</div>
+                    <div className="text-gray-400 text-sm">Instant messaging</div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
+                    <Settings className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <div className="text-white font-medium">Screen Sharing</div>
+                    <div className="text-gray-400 text-sm">Share your screen</div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-yellow-600 rounded-lg flex items-center justify-center">
+                    <Clock className="w-4 h-4 text-white" />
+                  </div>
+                  <div>
+                    <div className="text-white font-medium">File Sharing</div>
+                    <div className="text-gray-400 text-sm">Share files up to 100MB</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Tips */}
+            <Card className="bg-gray-800 border-gray-700">
+              <CardHeader>
+                <CardTitle className="text-white">Tips</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm text-gray-300">
+                <div>
+                  <strong className="text-white">Quick Start:</strong> Use instant meetings for impromptu calls
+                </div>
+                
+                <div>
+                  <strong className="text-white">Room Codes:</strong> Share 6-8 character codes for easy joining
+                </div>
+                
+                <div>
+                  <strong className="text-white">Screen Share:</strong> Perfect for presentations and demos
+                </div>
+                
+                <div>
+                  <strong className="text-white">File Sharing:</strong> Upload documents, images, and more
+                </div>
               </CardContent>
             </Card>
           </div>
         </div>
       </div>
-    </div>
-  )
-}
-
-// My Rooms List Component
-function MyRoomsList({ userId }: { userId: string }) {
-  const { data: session } = useSession()
-  const [rooms, setRooms] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const loadMyRooms = async () => {
-      if (!userId) return
-      
-      try {
-        const response = await fetch(`/api/rooms/list?type=created&limit=5`)
-        if (response.ok) {
-          const data = await response.json()
-          setRooms(data.rooms || [])
-        }
-      } catch (error) {
-        console.error('Failed to load rooms:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    loadMyRooms()
-  }, [userId])
-
-  const deleteRoom = async (roomId: string) => {
-    if (!confirm('Are you sure you want to delete this room? This action cannot be undone.')) return
-
-    try {
-      const response = await fetch(`/api/rooms/${roomId}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: session?.user?.id })
-      })
-
-      if (response.ok) {
-        setRooms(prev => prev.filter(room => room.roomId !== roomId))
-        alert('Room deleted successfully')
-      } else {
-        const error = await response.json()
-        alert(error.error || 'Failed to delete room')
-      }
-    } catch (error) {
-      console.error('Failed to delete room:', error)
-      alert('Failed to delete room')
-    }
-  }
-
-  if (loading) {
-    return <div className="text-center py-4">Loading your rooms...</div>
-  }
-
-  if (rooms.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <BookOpen className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-        <p className="text-gray-600 mb-4">You haven't created any rooms yet</p>
-        <Link href="/rooms/create">
-          <Button size="sm">
-            <Plus className="w-4 h-4 mr-2" />
-            Create Your First Room
-          </Button>
-        </Link>
-      </div>
-    )
-  }
-
-  return (
-    <div className="space-y-3">
-      {rooms.map((room) => (
-        <div key={room.roomId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg flex items-center justify-center">
-              <BookOpen className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <h4 className="font-semibold text-gray-900 text-sm">{room.name}</h4>
-              <div className="flex items-center space-x-2 text-xs text-gray-600">
-                <span>{room.subject}</span>
-                <span>•</span>
-                <span>{room.participantCount}/{room.maxParticipants} participants</span>
-                {room.privacy === 'private' ? (
-                  <Lock className="w-3 h-3" />
-                ) : (
-                  <Globe className="w-3 h-3" />
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center space-x-1">
-            <Link href={`/rooms/${room.roomId}`}>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                <Eye className="w-3 h-3" />
-              </Button>
-            </Link>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => deleteRoom(room.roomId)}
-              className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
-            >
-              <Trash2 className="w-3 h-3" />
-            </Button>
-          </div>
-        </div>
-      ))}
-      
-      <Link href="/rooms?tab=created">
-        <Button variant="outline" size="sm" className="w-full mt-3">
-          View All My Rooms
-          <ArrowRight className="w-3 h-3 ml-2" />
-        </Button>
-      </Link>
     </div>
   )
 }

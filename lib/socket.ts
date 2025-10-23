@@ -5,7 +5,7 @@ let socket: Socket
 export const initSocket = (): Socket => {
   if (!socket) {
     socket = io({
-      path: "/api/socketio",
+      path: "/socket.io/",
       addTrailingSlash: false,
     })
   }

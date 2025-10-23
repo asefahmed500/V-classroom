@@ -114,6 +114,154 @@ app.prepare().then(() => {
       }
     }, 20000) // Increased to 20 seconds for better Vercel compatibility
 
+    // Video call events
+    socket.on('join-video-call', async (data) => {
+      const { roomId, userId, userName, userEmail, isHost } = data || {}
+      
+      console.log(`Join video call request: ${userName} (${userId}) -> ${roomId}`)
+      
+      if (roomId && userId && userName) {
+        try {
+          await socket.join(roomId)
+          
+          if (!rooms.has(roomId)) {
+            rooms.set(roomId, new Map())
+            roomMessages.set(roomId, [])
+          }
+          
+          const roomParticipants = rooms.get(roomId)
+          
+          const participant = {
+            id: userId,
+            name: userName,
+            email: userEmail,
+            socketId: socket.id,
+            videoEnabled: true,
+            audioEnabled: true,
+            isScreenSharing: false,
+            isSpeaking: false,
+            isHandRaised: false,
+            joinedAt: Date.now(),
+            role: isHost ? 'host' : 'participant',
+            connectionQuality: 'excellent'
+          }
+          
+          roomParticipants.set(socket.id, participant)
+          
+          // Send current participants to new user
+          const participants = Array.from(roomParticipants.values())
+          socket.emit('room-joined', { participants })
+          
+          // Notify others about new participant
+          socket.to(roomId).emit('participant-joined', participant)
+          
+          console.log(`✅ User ${userName} joined video call ${roomId}`)
+          
+        } catch (error) {
+          console.error(`❌ Error joining video call ${roomId}:`, error)
+          socket.emit('video-call-error', { error: error.message })
+        }
+      }
+    })
+
+    socket.on('leave-video-call', (data) => {
+      const { roomId, userId } = data || {}
+      
+      if (roomId && userId) {
+        const roomParticipants = rooms.get(roomId)
+        if (roomParticipants) {
+          roomParticipants.delete(socket.id)
+          socket.to(roomId).emit('participant-left', userId)
+        }
+        socket.leave(roomId)
+        console.log(`User ${userId} left video call ${roomId}`)
+      }
+    })
+
+    socket.on('update-media', (data) => {
+      const { roomId, userId, type, enabled } = data || {}
+      if (roomId && userId) {
+        const roomParticipants = rooms.get(roomId)
+        if (roomParticipants) {
+          const participant = Array.from(roomParticipants.values()).find(p => p.id === userId)
+          if (participant) {
+            if (type === 'video') participant.videoEnabled = enabled
+            if (type === 'audio') participant.audioEnabled = enabled
+            socket.to(roomId).emit('participant-updated', participant)
+          }
+        }
+      }
+    })
+
+    socket.on('raise-hand', (data) => {
+      const { roomId, userId, userName, raised } = data || {}
+      if (roomId && userId) {
+        const roomParticipants = rooms.get(roomId)
+        if (roomParticipants) {
+          const participant = Array.from(roomParticipants.values()).find(p => p.id === userId)
+          if (participant) {
+            participant.isHandRaised = raised
+            socket.to(roomId).emit('participant-updated', participant)
+            if (raised) {
+              socket.to(roomId).emit('hand-raised', { participantId: userId, participantName: userName })
+            }
+          }
+        }
+      }
+    })
+
+    socket.on('screen-share-started', (data) => {
+      const { roomId, userId, userName } = data || {}
+      if (roomId && userId) {
+        const roomParticipants = rooms.get(roomId)
+        if (roomParticipants) {
+          const participant = Array.from(roomParticipants.values()).find(p => p.id === userId)
+          if (participant) {
+            participant.isScreenSharing = true
+            socket.to(roomId).emit('participant-updated', participant)
+            socket.to(roomId).emit('screen-share-started', { participantId: userId, participantName: userName })
+          }
+        }
+      }
+    })
+
+    socket.on('screen-share-stopped', (data) => {
+      const { roomId, userId } = data || {}
+      if (roomId && userId) {
+        const roomParticipants = rooms.get(roomId)
+        if (roomParticipants) {
+          const participant = Array.from(roomParticipants.values()).find(p => p.id === userId)
+          if (participant) {
+            participant.isScreenSharing = false
+            socket.to(roomId).emit('participant-updated', participant)
+            socket.to(roomId).emit('screen-share-stopped', { participantId: userId })
+          }
+        }
+      }
+    })
+
+    // WebRTC signaling for video calls
+    socket.on('webrtc-offer', (data) => {
+      const { roomId, offer, from, to } = data || {}
+      if (offer && to && from) {
+        socket.to(roomId).emit('webrtc-offer', { offer, from })
+      }
+    })
+
+    socket.on('webrtc-answer', (data) => {
+      const { roomId, answer, from, to } = data || {}
+      if (answer && to && from) {
+        socket.to(roomId).emit('webrtc-answer', { answer, from })
+      }
+    })
+
+    socket.on('webrtc-ice-candidate', (data) => {
+      const { roomId, candidate, from, to } = data || {}
+      if (candidate && to && from) {
+        socket.to(roomId).emit('webrtc-ice-candidate', { candidate, from })
+      }
+    })
+
     // Join room - updated to handle object parameter
     socket.on('join-room', async (data) => {
       // Handle both object and individual parameters for backward compatibility

@@ -47,7 +47,8 @@ export function EnhancedChat({ roomId, userId, userName }: EnhancedChatProps) {
         console.log("Attempting chat connection to:", socketUrl)
         
         const newSocket = io(socketUrl, {
-          transports: ["websocket", "polling"],
+          path: "/socket.io/",
+          transports: ["polling", "websocket"],
           timeout: 10000,
           reconnection: true,
           reconnectionAttempts: 3,
